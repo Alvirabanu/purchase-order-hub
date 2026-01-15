@@ -1,14 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, UserRole } from '@/types';
-import { supabase } from '@/lib/supabase';
-import { Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, name: string) => Promise<void>;
-  logout: () => Promise<void>;
+  loginWithRole: (name: string, role: UserRole) => Promise<void>;
+  logout: () => void;
   isAuthenticated: boolean;
   hasPermission: (permission: Permission) => boolean;
 }
@@ -50,7 +48,7 @@ const rolePermissions: Record<UserRole, Permission[]> = {
     'view_dashboard',
     'create_po',
     'view_po_register',
-    'download_pdf',
+    'download_pdf', // Only if approved - checked separately
     'view_products',
     'view_vendors'
   ],
@@ -66,118 +64,61 @@ const rolePermissions: Record<UserRole, Permission[]> = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-async function fetchUserRole(userId: string): Promise<UserRole> {
-  const { data, error } = await supabase
-    .from('user_roles')
-    .select('role')
-    .eq('user_id', userId)
-    .maybeSingle();
-  
-  if (error) {
-    console.error('Error fetching user role:', error);
-    return 'po_creator'; // Default role
-  }
-  
-  return (data?.role as UserRole) || 'po_creator';
-}
-
-async function fetchUserProfile(userId: string): Promise<{ name: string } | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('name')
-    .eq('id', userId)
-    .maybeSingle();
-  
-  if (error) {
-    console.error('Error fetching user profile:', error);
-    return null;
-  }
-  
-  return data;
-}
-
-async function buildUserFromSession(session: Session): Promise<User> {
-  const supabaseUser = session.user;
-  const [role, profile] = await Promise.all([
-    fetchUserRole(supabaseUser.id),
-    fetchUserProfile(supabaseUser.id)
-  ]);
-  
-  return {
-    id: supabaseUser.id,
-    email: supabaseUser.email || '',
-    name: profile?.name || supabaseUser.email?.split('@')[0] || 'User',
-    role
-  };
-}
-
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (session) {
-          const userData = await buildUserFromSession(session);
-          setUser(userData);
-        } else {
-          setUser(null);
-        }
-        setIsLoading(false);
-      }
-    );
-
-    // Then check for existing session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session) {
-        const userData = await buildUserFromSession(session);
-        setUser(userData);
-      }
-      setIsLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    const storedUser = localStorage.getItem('po_app_user');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+    setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
+    setIsLoading(true);
+    await new Promise(resolve => setTimeout(resolve, 800));
     
-    if (error) {
-      throw new Error(error.message);
+    if (email && password) {
+      const userData: User = {
+        id: '1',
+        email,
+        name: email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1),
+        role: 'main_admin'
+      };
+      setUser(userData);
+      localStorage.setItem('po_app_user', JSON.stringify(userData));
+      setIsLoading(false);
+    } else {
+      setIsLoading(false);
+      throw new Error('Invalid credentials');
     }
   };
 
-  const signup = async (email: string, password: string, name: string) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: window.location.origin,
-        data: { name }
-      }
-    });
+  const loginWithRole = async (name: string, role: UserRole) => {
+    setIsLoading(true);
+    await new Promise(resolve => setTimeout(resolve, 800));
     
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    // Create profile after signup
-    if (data.user) {
-      await supabase.from('profiles').insert({
-        id: data.user.id,
-        name
-      });
+    if (name.trim()) {
+      const userData: User = {
+        id: Date.now().toString(),
+        email: `${name.toLowerCase().replace(/\s+/g, '.')}@demo.com`,
+        name: name.trim(),
+        role
+      };
+      setUser(userData);
+      localStorage.setItem('po_app_user', JSON.stringify(userData));
+      setIsLoading(false);
+    } else {
+      setIsLoading(false);
+      throw new Error('Name is required');
     }
   };
 
-  const logout = async () => {
-    await supabase.auth.signOut();
+  const logout = () => {
     setUser(null);
+    localStorage.removeItem('po_app_user');
   };
 
   const hasPermission = (permission: Permission): boolean => {
@@ -190,7 +131,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       user, 
       isLoading, 
       login,
-      signup,
+      loginWithRole,
       logout, 
       isAuthenticated: !!user,
       hasPermission
