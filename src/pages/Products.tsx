@@ -3,7 +3,6 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -30,7 +29,6 @@ const Products = () => {
   const { hasPermission } = useAuth();
   const canManageProducts = hasPermission('manage_products');
   const canBulkDelete = hasPermission('bulk_delete_products');
-  const canToggleInclude = hasPermission('toggle_include_in_po');
 
   const [products, setProducts] = useState<Product[]>(mockProducts);
   const [searchQuery, setSearchQuery] = useState('');
@@ -141,16 +139,29 @@ const Products = () => {
     });
   };
 
-  const handleToggleInclude = (id: string, include: boolean) => {
+  const handlePOQuantityChange = (id: string, value: number) => {
     setProducts(products.map(p => 
-      p.id === id ? { ...p, include_in_create_po: include } : p
+      p.id === id ? { ...p, default_po_quantity: value } : p
     ));
   };
 
   const handleDownloadTemplate = () => {
-    // API placeholder for downloading Excel template
+    // Create CSV content with only headers
+    const headers = ['Product Name', 'Brand', 'Category', 'Supplier/Vendor', 'Current Stock', 'Reorder Level', 'Unit', 'PO Quantity'];
+    const csvContent = headers.join(',') + '\n';
+    
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'products_template.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
     console.log('API: GET /api/products/template');
-    alert('Download Blank Excel Template - API placeholder');
   };
 
   const handleUploadExcel = () => {
@@ -175,31 +186,29 @@ const Products = () => {
             <h1 className="page-title">Products</h1>
             <p className="text-muted-foreground text-sm mt-1">Manage your product catalog</p>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <Button variant="outline" className="gap-2" onClick={handleDownloadTemplate}>
-              <FileSpreadsheet className="h-4 w-4" />
-              Download Blank Excel Template
-            </Button>
-            <Button 
-              variant="outline" 
-              className="gap-2" 
-              onClick={handleUploadExcel}
-              disabled={!canManageProducts}
-              title={!canManageProducts ? 'No permission' : ''}
-            >
-              <Upload className="h-4 w-4" />
-              Upload Excel
-            </Button>
-            <Button 
-              onClick={() => handleOpenModal()} 
-              className="gap-2"
-              disabled={!canManageProducts}
-              title={!canManageProducts ? 'No permission' : ''}
-            >
-              <Plus className="h-4 w-4" />
-              Add Product
-            </Button>
-          </div>
+          {canManageProducts && (
+            <div className="flex gap-2 flex-wrap">
+              <Button variant="outline" className="gap-2" onClick={handleDownloadTemplate}>
+                <FileSpreadsheet className="h-4 w-4" />
+                Download Excel Template
+              </Button>
+              <Button 
+                variant="outline" 
+                className="gap-2" 
+                onClick={handleUploadExcel}
+              >
+                <Upload className="h-4 w-4" />
+                Upload Excel
+              </Button>
+              <Button 
+                onClick={() => handleOpenModal()} 
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Add Product
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Filters */}
@@ -245,8 +254,8 @@ const Products = () => {
           </CardContent>
         </Card>
 
-        {/* Bulk Actions */}
-        {someSelected && (
+        {/* Bulk Actions - Only for Main Admin */}
+        {someSelected && canBulkDelete && (
           <Card className="mb-4 border-destructive/30 bg-destructive/5">
             <CardContent className="p-4 flex items-center justify-between">
               <span className="text-sm font-medium">
@@ -257,11 +266,9 @@ const Products = () => {
                 size="sm" 
                 onClick={handleBulkDelete}
                 className="gap-2"
-                disabled={!canBulkDelete}
-                title={!canBulkDelete ? 'No permission' : ''}
               >
                 <Trash2 className="h-4 w-4" />
-                Bulk Delete
+                Delete Selected
               </Button>
             </CardContent>
           </Card>
@@ -274,13 +281,14 @@ const Products = () => {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th className="w-12">
-                      <Checkbox 
-                        checked={allSelected}
-                        onCheckedChange={handleSelectAll}
-                        disabled={!canBulkDelete}
-                      />
-                    </th>
+                    {canBulkDelete && (
+                      <th className="w-12">
+                        <Checkbox 
+                          checked={allSelected}
+                          onCheckedChange={handleSelectAll}
+                        />
+                      </th>
+                    )}
                     <th>Product Name</th>
                     <th>Brand</th>
                     <th>Category</th>
@@ -288,9 +296,8 @@ const Products = () => {
                     <th className="text-right">Current Stock</th>
                     <th className="text-right">Reorder Level</th>
                     <th>Unit</th>
-                    <th className="text-right">Default PO Qty</th>
-                    <th className="text-center">Include in PO</th>
-                    <th className="text-right">Actions</th>
+                    <th className="text-right w-28">PO Quantity</th>
+                    {canManageProducts && <th className="text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -299,13 +306,14 @@ const Products = () => {
                     const isLowStock = product.current_stock <= product.reorder_level;
                     return (
                       <tr key={product.id}>
-                        <td>
-                          <Checkbox 
-                            checked={selectedProducts.has(product.id)}
-                            onCheckedChange={(checked) => handleSelectProduct(product.id, !!checked)}
-                            disabled={!canBulkDelete}
-                          />
-                        </td>
+                        {canBulkDelete && (
+                          <td>
+                            <Checkbox 
+                              checked={selectedProducts.has(product.id)}
+                              onCheckedChange={(checked) => handleSelectProduct(product.id, !!checked)}
+                            />
+                          </td>
+                        )}
                         <td className="font-medium">{product.name}</td>
                         <td>{product.brand}</td>
                         <td>
@@ -324,38 +332,41 @@ const Products = () => {
                         </td>
                         <td className="text-right">{product.reorder_level}</td>
                         <td>{product.unit}</td>
-                        <td className="text-right">{product.default_po_quantity}</td>
-                        <td className="text-center">
-                          <Switch
-                            checked={product.include_in_create_po}
-                            onCheckedChange={(checked) => handleToggleInclude(product.id, checked)}
-                            disabled={!canToggleInclude}
+                        <td className="text-right">
+                          <Input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={product.default_po_quantity}
+                            onChange={(e) => handlePOQuantityChange(product.id, handleIntegerInput(e.target.value))}
+                            className="w-20 text-right h-8"
+                            disabled={!canManageProducts}
                           />
                         </td>
-                        <td className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleOpenModal(product)}
-                              className="h-8 w-8"
-                              disabled={!canManageProducts}
-                              title={!canManageProducts ? 'No permission' : 'Edit'}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDelete(product.id)}
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              disabled={!canManageProducts}
-                              title={!canManageProducts ? 'No permission' : 'Delete'}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
+                        {canManageProducts && (
+                          <td className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleOpenModal(product)}
+                                className="h-8 w-8"
+                                title="Edit"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDelete(product.id)}
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                title="Delete"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -395,21 +406,21 @@ const Products = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
-                <Input
-                  id="category"
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  placeholder="e.g., Electrical, Plumbing"
-                />
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="brand">Brand</Label>
                 <Input
                   id="brand"
                   value={formData.brand}
                   onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
                   placeholder="e.g., Havells, Philips"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="category">Category</Label>
+                <Input
+                  id="category"
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  placeholder="e.g., Electrical, Plumbing"
                 />
               </div>
               <div className="space-y-2">
@@ -471,7 +482,7 @@ const Products = () => {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="default_po_quantity">Default PO Quantity</Label>
+                  <Label htmlFor="default_po_quantity">PO Quantity</Label>
                   <Input
                     id="default_po_quantity"
                     type="number"
@@ -481,14 +492,6 @@ const Products = () => {
                     step="1"
                   />
                 </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="include_in_create_po">Include in Create PO</Label>
-                <Switch
-                  id="include_in_create_po"
-                  checked={formData.include_in_create_po}
-                  onCheckedChange={(checked) => setFormData({ ...formData, include_in_create_po: checked })}
-                />
               </div>
             </div>
             <DialogFooter>
