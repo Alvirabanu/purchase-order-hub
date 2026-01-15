@@ -6,26 +6,46 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Loader2, FileText, AlertCircle } from 'lucide-react';
+import { UserRole } from '@/types';
 
 const Login = () => {
-  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState<UserRole>('main_admin');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const { loginWithRole } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!name.trim()) {
+      setError('Please enter your name');
+      return;
+    }
+
+    if (!role) {
+      setError('Please select a role');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      await login(email, password);
+      await loginWithRole(name, role);
       navigate('/create-po');
     } catch (err) {
-      setError('Invalid email or password. Please try again.');
+      setError('Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -44,8 +64,8 @@ const Login = () => {
 
         <Card className="shadow-lg border-border/50">
           <CardHeader className="text-center pb-4">
-            <CardTitle className="text-xl">Welcome back</CardTitle>
-            <CardDescription>Sign in to your account to continue</CardDescription>
+            <CardTitle className="text-xl">Welcome</CardTitle>
+            <CardDescription>Enter your details and select a role to continue</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -57,13 +77,13 @@ const Login = () => {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="name">Name / Username</Label>
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="name"
+                  type="text"
+                  placeholder="Enter your name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   required
                   disabled={isLoading}
                   className="h-11"
@@ -71,17 +91,49 @@ const Login = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">Password (optional)</Label>
                 <Input
                   id="password"
                   type="password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  required
                   disabled={isLoading}
                   className="h-11"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="role">Select Role</Label>
+                <Select
+                  value={role}
+                  onValueChange={(value: UserRole) => setRole(value)}
+                  disabled={isLoading}
+                >
+                  <SelectTrigger className="h-11">
+                    <SelectValue placeholder="Select your role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="main_admin">
+                      <div className="flex flex-col items-start">
+                        <span className="font-medium">Main Admin</span>
+                        <span className="text-xs text-muted-foreground">Full access to everything</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="po_creator">
+                      <div className="flex flex-col items-start">
+                        <span className="font-medium">PO Creator</span>
+                        <span className="text-xs text-muted-foreground">Create POs, view register</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="approval_admin">
+                      <div className="flex flex-col items-start">
+                        <span className="font-medium">Approval Admin</span>
+                        <span className="text-xs text-muted-foreground">Approve POs, view register</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <Button 
@@ -99,24 +151,6 @@ const Login = () => {
                 )}
               </Button>
             </form>
-
-            <div className="mt-6 pt-4 border-t">
-              <p className="text-xs text-muted-foreground text-center mb-3">Demo accounts (any password):</p>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between px-3 py-2 bg-muted rounded">
-                  <span className="font-medium">Main Admin:</span>
-                  <code>admin@demo.com</code>
-                </div>
-                <div className="flex justify-between px-3 py-2 bg-muted rounded">
-                  <span className="font-medium">PO Creator:</span>
-                  <code>creator@demo.com</code>
-                </div>
-                <div className="flex justify-between px-3 py-2 bg-muted rounded">
-                  <span className="font-medium">Approval Admin:</span>
-                  <code>approver@demo.com</code>
-                </div>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>

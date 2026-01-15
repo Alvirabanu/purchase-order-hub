@@ -24,6 +24,7 @@ import {
   FileText,
   ChevronLeft,
   Menu,
+  CheckSquare,
 } from 'lucide-react';
 
 const getRoleLabel = (role: string) => {
@@ -44,10 +45,17 @@ const getRoleColor = (role: string) => {
   }
 };
 
+interface NavItem {
+  title: string;
+  url: string;
+  icon: React.ComponentType<{ className?: string }>;
+  visibleFor: string[];
+}
+
 export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { logout, user, hasPermission } = useAuth();
+  const { logout, user } = useAuth();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === 'collapsed';
 
@@ -56,14 +64,20 @@ export function AppSidebar() {
     navigate('/login');
   };
 
-  // All nav items visible for all roles - actions disabled based on permissions
-  const navItems = [
-    { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard, disabled: false },
-    { title: 'Create PO', url: '/create-po', icon: FilePlus, disabled: !hasPermission('create_po') },
-    { title: 'Products', url: '/products', icon: Package, disabled: false },
-    { title: 'Vendors', url: '/vendors', icon: Building2, disabled: false },
-    { title: 'PO Register', url: '/po-register', icon: ClipboardList, disabled: false },
+  // Define nav items with role-based visibility
+  const allNavItems: NavItem[] = [
+    { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard, visibleFor: ['main_admin', 'po_creator', 'approval_admin'] },
+    { title: 'Products', url: '/products', icon: Package, visibleFor: ['main_admin'] },
+    { title: 'Vendors', url: '/vendors', icon: Building2, visibleFor: ['main_admin'] },
+    { title: 'Create PO', url: '/create-po', icon: FilePlus, visibleFor: ['main_admin', 'po_creator'] },
+    { title: 'PO Register', url: '/po-register', icon: ClipboardList, visibleFor: ['main_admin', 'po_creator', 'approval_admin'] },
+    { title: 'Approvals', url: '/approvals', icon: CheckSquare, visibleFor: ['main_admin', 'approval_admin'] },
   ];
+
+  // Filter nav items based on user role
+  const navItems = allNavItems.filter(item => 
+    user?.role && item.visibleFor.includes(user.role)
+  );
 
   return (
     <Sidebar collapsible="icon">
@@ -102,17 +116,14 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       asChild
                       isActive={isActive}
-                      tooltip={item.disabled ? `${item.title} (No permission)` : item.title}
+                      tooltip={item.title}
                     >
                       <button
-                        onClick={() => !item.disabled && navigate(item.url)}
-                        disabled={item.disabled}
+                        onClick={() => navigate(item.url)}
                         className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg transition-colors ${
-                          item.disabled
-                            ? 'text-sidebar-muted/50 cursor-not-allowed'
-                            : isActive
-                              ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                              : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                          isActive
+                            ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                            : 'text-sidebar-foreground hover:bg-sidebar-accent'
                         }`}
                       >
                         <item.icon className="h-5 w-5 shrink-0" />
