@@ -1,18 +1,25 @@
-export interface Supplier {
+export type UserRole = 'main_admin' | 'po_creator' | 'approval_admin';
+
+export interface Vendor {
   id: string;
   name: string;
   gst: string;
-  payment_terms: string;
   address: string;
+  contact_person_name: string;
+  contact_person_email: string;
 }
 
 export interface Product {
   id: string;
   name: string;
+  brand: string;
   category: string;
-  supplier_id: string;
+  vendor_id: string;
   current_stock: number;
   reorder_level: number;
+  unit: 'pcs' | 'boxes';
+  default_po_quantity: number;
+  include_in_create_po: boolean;
 }
 
 export interface POItem {
@@ -25,10 +32,10 @@ export interface POItem {
 export interface PurchaseOrder {
   id: string;
   po_number: string;
-  supplier_id: string;
+  vendor_id: string;
   date: string;
   total_items: number;
-  status: 'draft' | 'pending' | 'approved' | 'completed';
+  status: 'created' | 'approved';
   items: POItem[];
 }
 
@@ -36,10 +43,11 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  role: UserRole;
 }
 
 export interface DashboardStats {
   totalProducts: number;
-  totalSuppliers: number;
+  totalVendors: number;
   posThisMonth: number;
 }

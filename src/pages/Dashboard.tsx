@@ -2,10 +2,11 @@ import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { mockProducts, mockSuppliers, mockPurchaseOrders } from '@/lib/mockData';
+import { mockProducts, mockVendors, mockPurchaseOrders } from '@/lib/mockData';
+import { useAuth } from '@/contexts/AuthContext';
 import { 
   Package, 
-  Users, 
+  Building2, 
   FileText, 
   FilePlus, 
   ClipboardList, 
@@ -15,6 +16,7 @@ import {
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { hasPermission } = useAuth();
 
   const stats = [
     {
@@ -25,9 +27,9 @@ const Dashboard = () => {
       bgColor: 'bg-primary/10',
     },
     {
-      title: 'Total Suppliers',
-      value: mockSuppliers.length,
-      icon: Users,
+      title: 'Total Vendors',
+      value: mockVendors.length,
+      icon: Building2,
       color: 'text-success',
       bgColor: 'bg-success/10',
     },
@@ -40,12 +42,13 @@ const Dashboard = () => {
     },
   ];
 
+  // Build quick actions based on permissions
   const quickActions = [
-    { label: 'Create PO', icon: FilePlus, path: '/create-po', variant: 'default' as const },
-    { label: 'Products', icon: Package, path: '/products', variant: 'outline' as const },
-    { label: 'Suppliers', icon: Users, path: '/suppliers', variant: 'outline' as const },
-    { label: 'PO Register', icon: ClipboardList, path: '/po-register', variant: 'outline' as const },
-  ];
+    { label: 'Create PO', icon: FilePlus, path: '/create-po', variant: 'default' as const, show: hasPermission('create_po') },
+    { label: 'Products', icon: Package, path: '/products', variant: 'outline' as const, show: true },
+    { label: 'Vendors', icon: Building2, path: '/vendors', variant: 'outline' as const, show: true },
+    { label: 'PO Register', icon: ClipboardList, path: '/po-register', variant: 'outline' as const, show: hasPermission('view_po_register') },
+  ].filter(action => action.show);
 
   const lowStockProducts = mockProducts.filter(p => p.current_stock <= p.reorder_level);
 
@@ -118,25 +121,27 @@ const Dashboard = () => {
                   >
                     <div>
                       <p className="font-medium">{product.name}</p>
-                      <p className="text-sm text-muted-foreground">{product.category}</p>
+                      <p className="text-sm text-muted-foreground">{product.brand} • {product.category}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm">
-                        Stock: <span className="font-semibold text-destructive">{product.current_stock}</span>
+                        Stock: <span className="font-semibold text-destructive">{product.current_stock}</span> {product.unit}
                       </p>
                       <p className="text-xs text-muted-foreground">Reorder at: {product.reorder_level}</p>
                     </div>
                   </div>
                 ))}
               </div>
-              <Button
-                variant="ghost"
-                className="w-full mt-4 text-warning hover:text-warning hover:bg-warning/10"
-                onClick={() => navigate('/create-po')}
-              >
-                Create Purchase Order
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </Button>
+              {hasPermission('create_po') && (
+                <Button
+                  variant="ghost"
+                  className="w-full mt-4 text-warning hover:text-warning hover:bg-warning/10"
+                  onClick={() => navigate('/create-po')}
+                >
+                  Create Purchase Order
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              )}
             </CardContent>
           </Card>
         )}

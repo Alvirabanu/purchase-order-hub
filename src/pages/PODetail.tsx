@@ -3,17 +3,25 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { getPOById, getSupplierById, getProductById } from '@/lib/mockData';
-import { ArrowLeft, Download, FileText, Building2 } from 'lucide-react';
+import { getPOById, getVendorById, getProductById } from '@/lib/mockData';
+import { useAuth } from '@/contexts/AuthContext';
+import { ArrowLeft, Download, FileText, Building2, Mail, CheckCircle } from 'lucide-react';
+import { useState } from 'react';
+import { PurchaseOrder } from '@/types';
 
 const PODetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { hasPermission, user } = useAuth();
+  const canApprove = hasPermission('approve_po');
+  const canDownload = hasPermission('download_pdf');
+  const canSendMail = hasPermission('send_mail');
 
-  const purchaseOrder = id ? getPOById(id) : undefined;
-  const supplier = purchaseOrder ? getSupplierById(purchaseOrder.supplier_id) : undefined;
+  const initialPO = id ? getPOById(id) : undefined;
+  const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | undefined>(initialPO);
+  const vendor = purchaseOrder ? getVendorById(purchaseOrder.vendor_id) : undefined;
 
-  if (!purchaseOrder || !supplier) {
+  if (!purchaseOrder || !vendor) {
     return (
       <AppLayout>
         <div className="animate-fade-in">
@@ -45,27 +53,73 @@ const PODetail = () => {
 
   const getStatusClass = (status: string) => {
     const statusClasses: Record<string, string> = {
-      draft: 'status-badge status-draft',
-      pending: 'status-badge status-pending',
+      created: 'status-badge status-pending',
       approved: 'status-badge status-approved',
-      completed: 'status-badge status-completed',
     };
     return statusClasses[status] || 'status-badge';
+  };
+
+  // Check if user can download this PO
+  const canDownloadPO = () => {
+    if (!canDownload) return false;
+    if (user?.role === 'po_creator') {
+      return purchaseOrder.status === 'approved';
+    }
+    return purchaseOrder.status === 'approved';
+  };
+
+  // Check if user can send mail for this PO
+  const canSendMailPO = () => {
+    return canSendMail && purchaseOrder.status === 'approved';
+  };
+
+  const handleApprove = () => {
+    setPurchaseOrder(prev => prev ? { ...prev, status: 'approved' } : prev);
+    // API placeholder: PUT /api/po/{id}/approve
+    console.log(`API: PUT /api/po/${id}/approve`);
+  };
+
+  const handleDownloadPDF = () => {
+    // API placeholder: GET /api/po/{id}/pdf
+    console.log(`API: GET /api/po/${id}/pdf`);
+    alert('Download PDF - API placeholder');
+  };
+
+  const handleSendMail = () => {
+    // API placeholder: POST /api/po/{id}/send-mail
+    console.log(`API: POST /api/po/${id}/send-mail`);
+    alert('Send mail to vendor - API placeholder');
   };
 
   return (
     <AppLayout>
       <div className="animate-fade-in max-w-4xl mx-auto">
         {/* Header Actions */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
           <Button variant="ghost" onClick={() => navigate('/po-register')} className="gap-2">
             <ArrowLeft className="h-4 w-4" />
             Back to Register
           </Button>
-          <Button className="gap-2">
-            <Download className="h-4 w-4" />
-            Download PDF
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            {canApprove && purchaseOrder.status === 'created' && (
+              <Button onClick={handleApprove} className="gap-2">
+                <CheckCircle className="h-4 w-4" />
+                Approve PO
+              </Button>
+            )}
+            {canDownloadPO() && (
+              <Button variant="outline" onClick={handleDownloadPDF} className="gap-2">
+                <Download className="h-4 w-4" />
+                Download PDF
+              </Button>
+            )}
+            {canSendMailPO() && (
+              <Button variant="outline" onClick={handleSendMail} className="gap-2">
+                <Mail className="h-4 w-4" />
+                Send to Vendor
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* PO Document */}
@@ -93,26 +147,34 @@ const PODetail = () => {
 
             <Separator className="my-6" />
 
-            {/* Supplier Details */}
+            {/* Vendor Details */}
             <div className="mb-8">
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                Supplier Details
+                Vendor Details
               </h3>
               <Card className="bg-muted/30">
                 <CardContent className="p-4">
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
-                      <p className="font-semibold text-lg">{supplier.name}</p>
-                      <p className="text-sm text-muted-foreground mt-1">{supplier.address}</p>
+                      <p className="font-semibold text-lg">{vendor.name}</p>
+                      <p className="text-sm text-muted-foreground mt-1">{vendor.address}</p>
+                      <p className="text-sm mt-2">
+                        <span className="text-muted-foreground">Contact: </span>
+                        <span className="font-medium">{vendor.contact_person_name}</span>
+                      </p>
+                      <p className="text-sm">
+                        <span className="text-muted-foreground">Email: </span>
+                        <span>{vendor.contact_person_email}</span>
+                      </p>
                     </div>
                     <div className="sm:text-right">
                       <p className="text-sm">
-                        <span className="text-muted-foreground">GST: </span>
-                        <code className="bg-background px-2 py-0.5 rounded text-xs">{supplier.gst}</code>
+                        <span className="text-muted-foreground">Vendor ID: </span>
+                        <code className="bg-background px-2 py-0.5 rounded text-xs">{vendor.id}</code>
                       </p>
                       <p className="text-sm mt-1">
-                        <span className="text-muted-foreground">Payment Terms: </span>
-                        <span className="font-medium">{supplier.payment_terms}</span>
+                        <span className="text-muted-foreground">GST: </span>
+                        <code className="bg-background px-2 py-0.5 rounded text-xs">{vendor.gst}</code>
                       </p>
                     </div>
                   </div>
@@ -131,7 +193,9 @@ const PODetail = () => {
                     <tr className="bg-muted/50">
                       <th className="text-left py-3 px-4 text-sm font-semibold">#</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Product</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Brand</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Category</th>
+                      <th className="text-center py-3 px-4 text-sm font-semibold">Unit</th>
                       <th className="text-right py-3 px-4 text-sm font-semibold">Quantity</th>
                     </tr>
                   </thead>
@@ -142,7 +206,9 @@ const PODetail = () => {
                         <tr key={item.id} className="border-t">
                           <td className="py-3 px-4 text-sm text-muted-foreground">{index + 1}</td>
                           <td className="py-3 px-4 font-medium">{product?.name || 'Unknown Product'}</td>
+                          <td className="py-3 px-4 text-muted-foreground">{product?.brand || '-'}</td>
                           <td className="py-3 px-4 text-muted-foreground">{product?.category || '-'}</td>
+                          <td className="py-3 px-4 text-center text-muted-foreground">{product?.unit || '-'}</td>
                           <td className="py-3 px-4 text-right font-semibold">{item.quantity}</td>
                         </tr>
                       );
@@ -150,7 +216,7 @@ const PODetail = () => {
                   </tbody>
                   <tfoot>
                     <tr className="border-t bg-muted/30">
-                      <td colSpan={3} className="py-3 px-4 text-sm font-semibold text-right">
+                      <td colSpan={5} className="py-3 px-4 text-sm font-semibold text-right">
                         Total Items:
                       </td>
                       <td className="py-3 px-4 text-right font-bold text-lg">

@@ -1,33 +1,37 @@
-import { Supplier, Product, PurchaseOrder } from '@/types';
+import { Vendor, Product, PurchaseOrder } from '@/types';
 
-export const mockSuppliers: Supplier[] = [
+export const mockVendors: Vendor[] = [
   {
-    id: '1',
+    id: 'V001',
     name: 'Tech Components Ltd',
     gst: '27AABCT1234C1ZV',
-    payment_terms: 'Net 30',
-    address: '123 Industrial Area, Mumbai, MH 400001'
+    address: '123 Industrial Area, Mumbai, MH 400001',
+    contact_person_name: 'Rahul Sharma',
+    contact_person_email: 'rahul@techcomponents.com'
   },
   {
-    id: '2',
+    id: 'V002',
     name: 'Global Electronics Inc',
     gst: '29AADCG5678D1ZP',
-    payment_terms: 'Net 45',
-    address: '456 Tech Park, Bangalore, KA 560001'
+    address: '456 Tech Park, Bangalore, KA 560001',
+    contact_person_name: 'Priya Patel',
+    contact_person_email: 'priya@globalelectronics.com'
   },
   {
-    id: '3',
+    id: 'V003',
     name: 'Prime Materials Co',
     gst: '33AABCP9012E1ZQ',
-    payment_terms: 'Net 15',
-    address: '789 Commerce Street, Chennai, TN 600001'
+    address: '789 Commerce Street, Chennai, TN 600001',
+    contact_person_name: 'Suresh Kumar',
+    contact_person_email: 'suresh@primematerials.com'
   },
   {
-    id: '4',
+    id: 'V004',
     name: 'Industrial Supplies Hub',
     gst: '24AADCI3456F1ZR',
-    payment_terms: 'Net 30',
-    address: '321 Factory Road, Ahmedabad, GJ 380001'
+    address: '321 Factory Road, Ahmedabad, GJ 380001',
+    contact_person_name: 'Amit Singh',
+    contact_person_email: 'amit@industrialsupplies.com'
   }
 ];
 
@@ -35,50 +39,74 @@ export const mockProducts: Product[] = [
   {
     id: '1',
     name: 'Copper Wire 2.5mm',
+    brand: 'Finolex',
     category: 'Electrical',
-    supplier_id: '1',
+    vendor_id: 'V001',
     current_stock: 150,
-    reorder_level: 50
+    reorder_level: 50,
+    unit: 'pcs',
+    default_po_quantity: 100,
+    include_in_create_po: true
   },
   {
     id: '2',
     name: 'LED Panel 40W',
+    brand: 'Philips',
     category: 'Lighting',
-    supplier_id: '2',
+    vendor_id: 'V002',
     current_stock: 25,
-    reorder_level: 30
+    reorder_level: 30,
+    unit: 'pcs',
+    default_po_quantity: 50,
+    include_in_create_po: true
   },
   {
     id: '3',
     name: 'Circuit Breaker 32A',
+    brand: 'Havells',
     category: 'Electrical',
-    supplier_id: '1',
+    vendor_id: 'V001',
     current_stock: 80,
-    reorder_level: 40
+    reorder_level: 40,
+    unit: 'pcs',
+    default_po_quantity: 30,
+    include_in_create_po: true
   },
   {
     id: '4',
     name: 'Steel Pipe 2inch',
+    brand: 'TATA',
     category: 'Plumbing',
-    supplier_id: '3',
+    vendor_id: 'V003',
     current_stock: 200,
-    reorder_level: 100
+    reorder_level: 100,
+    unit: 'pcs',
+    default_po_quantity: 150,
+    include_in_create_po: true
   },
   {
     id: '5',
     name: 'PVC Conduit 25mm',
+    brand: 'Supreme',
     category: 'Electrical',
-    supplier_id: '4',
+    vendor_id: 'V004',
     current_stock: 300,
-    reorder_level: 150
+    reorder_level: 150,
+    unit: 'boxes',
+    default_po_quantity: 100,
+    include_in_create_po: false
   },
   {
     id: '6',
     name: 'Motor 5HP',
+    brand: 'Crompton',
     category: 'Machinery',
-    supplier_id: '2',
+    vendor_id: 'V002',
     current_stock: 8,
-    reorder_level: 10
+    reorder_level: 10,
+    unit: 'pcs',
+    default_po_quantity: 5,
+    include_in_create_po: true
   }
 ];
 
@@ -86,10 +114,10 @@ export const mockPurchaseOrders: PurchaseOrder[] = [
   {
     id: '1',
     po_number: 'PO-2024-001',
-    supplier_id: '1',
+    vendor_id: 'V001',
     date: '2024-01-15',
     total_items: 3,
-    status: 'completed',
+    status: 'approved',
     items: [
       { id: '1', po_id: '1', product_id: '1', quantity: 100 },
       { id: '2', po_id: '1', product_id: '3', quantity: 50 }
@@ -98,7 +126,7 @@ export const mockPurchaseOrders: PurchaseOrder[] = [
   {
     id: '2',
     po_number: 'PO-2024-002',
-    supplier_id: '2',
+    vendor_id: 'V002',
     date: '2024-01-18',
     total_items: 2,
     status: 'approved',
@@ -110,18 +138,18 @@ export const mockPurchaseOrders: PurchaseOrder[] = [
   {
     id: '3',
     po_number: 'PO-2024-003',
-    supplier_id: '3',
+    vendor_id: 'V003',
     date: '2024-01-20',
     total_items: 1,
-    status: 'pending',
+    status: 'created',
     items: [
       { id: '5', po_id: '3', product_id: '4', quantity: 150 }
     ]
   }
 ];
 
-export const getSupplierById = (id: string): Supplier | undefined => {
-  return mockSuppliers.find(s => s.id === id);
+export const getVendorById = (id: string): Vendor | undefined => {
+  return mockVendors.find(v => v.id === id);
 };
 
 export const getProductById = (id: string): Product | undefined => {
@@ -131,3 +159,7 @@ export const getProductById = (id: string): Product | undefined => {
 export const getPOById = (id: string): PurchaseOrder | undefined => {
   return mockPurchaseOrders.find(po => po.id === id);
 };
+
+// Legacy aliases for backward compatibility during migration
+export const mockSuppliers = mockVendors;
+export const getSupplierById = getVendorById;
