@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -20,17 +21,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
-import { mockProducts, mockVendors, getVendorById } from '@/lib/mockData';
+import { useDataStore } from '@/contexts/DataStoreContext';
 import { Product } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { Plus, Search, Pencil, Trash2, Package, AlertCircle, FileSpreadsheet, Upload } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 const Products = () => {
   const { hasPermission } = useAuth();
   const canManageProducts = hasPermission('manage_products');
   const canBulkDelete = hasPermission('bulk_delete_products');
 
-  const [products, setProducts] = useState<Product[]>(mockProducts);
+  const { products, vendors, updateProduct, addProduct, deleteProduct, deleteProducts, getVendorById } = useDataStore();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [vendorFilter, setVendorFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -92,31 +95,46 @@ const Products = () => {
 
   const handleSave = () => {
     if (editingProduct) {
-      setProducts(products.map(p => 
-        p.id === editingProduct.id ? { ...p, ...formData } : p
-      ));
+      updateProduct(editingProduct.id, formData);
+      toast({
+        title: "Product Updated",
+        description: "Product has been updated successfully.",
+      });
     } else {
       const newProduct: Product = {
         id: Date.now().toString(),
         ...formData,
       };
-      setProducts([...products, newProduct]);
+      addProduct(newProduct);
+      toast({
+        title: "Product Added",
+        description: "New product has been added successfully.",
+      });
     }
     setIsModalOpen(false);
   };
 
   const handleDelete = (id: string) => {
-    setProducts(products.filter(p => p.id !== id));
+    deleteProduct(id);
     setSelectedProducts(prev => {
       const newSet = new Set(prev);
       newSet.delete(id);
       return newSet;
     });
+    toast({
+      title: "Product Deleted",
+      description: "Product has been removed.",
+    });
   };
 
   const handleBulkDelete = () => {
-    setProducts(products.filter(p => !selectedProducts.has(p.id)));
+    deleteProducts(Array.from(selectedProducts));
+    const count = selectedProducts.size;
     setSelectedProducts(new Set());
+    toast({
+      title: "Products Deleted",
+      description: `${count} product(s) have been removed.`,
+    });
   };
 
   const handleSelectAll = (checked: boolean) => {
@@ -140,17 +158,17 @@ const Products = () => {
   };
 
   const handlePOQuantityChange = (id: string, value: number) => {
-    setProducts(products.map(p => 
-      p.id === id ? { ...p, default_po_quantity: value } : p
-    ));
+    updateProduct(id, { default_po_quantity: value });
+  };
+
+  const handleToggleIncludeInPO = (id: string, checked: boolean) => {
+    updateProduct(id, { include_in_create_po: checked });
   };
 
   const handleDownloadTemplate = () => {
-    // Create CSV content with only headers
     const headers = ['Product Name', 'Brand', 'Category', 'Supplier/Vendor', 'Current Stock', 'Reorder Level', 'Unit', 'PO Quantity'];
     const csvContent = headers.join(',') + '\n';
     
-    // Create blob and download
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
@@ -161,13 +179,18 @@ const Products = () => {
     link.click();
     document.body.removeChild(link);
     
-    console.log('API: GET /api/products/template');
+    toast({
+      title: "Template Downloaded",
+      description: "Excel template has been downloaded.",
+    });
   };
 
   const handleUploadExcel = () => {
-    // API placeholder for uploading Excel file
     console.log('API: POST /api/products/upload');
-    alert('Upload Excel - API placeholder');
+    toast({
+      title: "Upload Excel",
+      description: "Upload functionality placeholder.",
+    });
   };
 
   const handleIntegerInput = (value: string): number => {
@@ -230,7 +253,7 @@ const Products = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Vendors</SelectItem>
-                  {mockVendors.map(vendor => (
+                  {vendors.map(vendor => (
                     <SelectItem key={vendor.id} value={vendor.id}>
                       {vendor.name}
                     </SelectItem>
@@ -297,6 +320,7 @@ const Products = () => {
                     <th className="text-right">Reorder Level</th>
                     <th>Unit</th>
                     <th className="text-right w-28">PO Quantity</th>
+                    <th className="text-center">Include in PO</th>
                     {canManageProducts && <th className="text-right">Actions</th>}
                   </tr>
                 </thead>
@@ -340,6 +364,13 @@ const Products = () => {
                             value={product.default_po_quantity}
                             onChange={(e) => handlePOQuantityChange(product.id, handleIntegerInput(e.target.value))}
                             className="w-20 text-right h-8"
+                            disabled={!canManageProducts}
+                          />
+                        </td>
+                        <td className="text-center">
+                          <Switch
+                            checked={product.include_in_create_po}
+                            onCheckedChange={(checked) => handleToggleIncludeInPO(product.id, checked)}
                             disabled={!canManageProducts}
                           />
                         </td>
@@ -433,7 +464,7 @@ const Products = () => {
                     <SelectValue placeholder="Select a vendor" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockVendors.map(vendor => (
+                    {vendors.map(vendor => (
                       <SelectItem key={vendor.id} value={vendor.id}>
                         {vendor.name}
                       </SelectItem>
@@ -473,7 +504,7 @@ const Products = () => {
                     onValueChange={(value: 'pcs' | 'boxes') => setFormData({ ...formData, unit: value })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select unit" />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="pcs">pcs</SelectItem>
@@ -493,12 +524,20 @@ const Products = () => {
                   />
                 </div>
               </div>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="include_in_create_po"
+                  checked={formData.include_in_create_po}
+                  onCheckedChange={(checked) => setFormData({ ...formData, include_in_create_po: checked })}
+                />
+                <Label htmlFor="include_in_create_po">Include in Create PO</Label>
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsModalOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleSave}>
+              <Button onClick={handleSave} disabled={!formData.name || !formData.vendor_id}>
                 {editingProduct ? 'Save Changes' : 'Add Product'}
               </Button>
             </DialogFooter>

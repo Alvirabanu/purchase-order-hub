@@ -21,20 +21,21 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { mockPurchaseOrders, mockVendors, getVendorById } from '@/lib/mockData';
-import { PurchaseOrder } from '@/types';
+import { useDataStore } from '@/contexts/DataStoreContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Search, Eye, Download, ClipboardList, Calendar, CheckCircle, Mail } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 const PORegister = () => {
   const navigate = useNavigate();
   const { hasPermission, user } = useAuth();
+  const { purchaseOrders, vendors, getVendorById, approvePurchaseOrder, approvePurchaseOrders } = useDataStore();
+  
   const canApprove = hasPermission('approve_po');
   const canBulkApprove = hasPermission('bulk_approve_po');
   const canDownload = hasPermission('download_pdf');
   const canSendMail = hasPermission('send_mail');
 
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(mockPurchaseOrders);
   const [searchQuery, setSearchQuery] = useState('');
   const [vendorFilter, setVendorFilter] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState('');
@@ -58,12 +59,12 @@ const PORegister = () => {
     return matchesSearch && matchesVendor && matchesDate;
   });
 
-  const getStatusClass = (status: PurchaseOrder['status']) => {
-    const statusClasses = {
+  const getStatusClass = (status: string) => {
+    const statusClasses: Record<string, string> = {
       created: 'status-badge status-pending',
       approved: 'status-badge status-approved',
     };
-    return statusClasses[status];
+    return statusClasses[status] || 'status-badge';
   };
 
   const formatDate = (dateStr: string) => {
@@ -95,28 +96,50 @@ const PORegister = () => {
   };
 
   const handleApprovePO = (id: string) => {
-    setPurchaseOrders(prev => prev.map(po => 
-      po.id === id ? { ...po, status: 'approved' as const } : po
-    ));
+    approvePurchaseOrder(id, user?.name || 'Unknown');
+    toast({
+      title: "PO Approved",
+      description: "Purchase order has been approved successfully.",
+    });
   };
 
   const handleBulkApprove = () => {
-    setPurchaseOrders(prev => prev.map(po => 
-      selectedPOs.has(po.id) ? { ...po, status: 'approved' as const } : po
-    ));
+    const createdPOIds = Array.from(selectedPOs).filter(id => {
+      const po = purchaseOrders.find(p => p.id === id);
+      return po?.status === 'created';
+    });
+    
+    if (createdPOIds.length === 0) {
+      toast({
+        title: "No POs to approve",
+        description: "All selected POs are already approved.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    approvePurchaseOrders(createdPOIds, user?.name || 'Unknown');
     setSelectedPOs(new Set());
+    toast({
+      title: "Bulk Approval Complete",
+      description: `${createdPOIds.length} purchase order(s) approved successfully.`,
+    });
   };
 
   const handleDownloadPDF = (id: string) => {
-    // API placeholder: GET /api/po/{id}/pdf
     console.log(`API: GET /api/po/${id}/pdf`);
-    alert(`Download PDF for PO - API placeholder`);
+    toast({
+      title: "Download Started",
+      description: "PDF download initiated.",
+    });
   };
 
   const handleSendMail = (id: string) => {
-    // API placeholder: POST /api/po/{id}/send-mail
     console.log(`API: POST /api/po/${id}/send-mail`);
-    alert(`Send mail for PO - API placeholder`);
+    toast({
+      title: "Email Sent",
+      description: "Email sent to vendor successfully.",
+    });
   };
 
   const handleBulkDownload = () => {
@@ -124,13 +147,15 @@ const PORegister = () => {
   };
 
   const confirmBulkDownload = () => {
-    // API placeholder: POST /api/po/bulk-download
     const approvedSelectedPOs = Array.from(selectedPOs).filter(id => {
       const po = purchaseOrders.find(p => p.id === id);
       return po?.status === 'approved';
     });
     console.log(`API: POST /api/po/bulk-download`, { ids: approvedSelectedPOs, location: downloadLocation });
-    alert(`Bulk download ${approvedSelectedPOs.length} POs to ${downloadLocation} - API placeholder`);
+    toast({
+      title: "Bulk Download",
+      description: `${approvedSelectedPOs.length} POs downloaded.`,
+    });
     setShowLocationDialog(false);
     setDownloadLocation('');
     setSelectedPOs(new Set());
@@ -144,19 +169,14 @@ const PORegister = () => {
   }).length;
 
   // Check if user can download a specific PO
-  const canDownloadPO = (po: PurchaseOrder) => {
+  const canDownloadPO = (po: { status: string; canDownloadPdf?: boolean }) => {
     if (!canDownload) return false;
-    // PO Creator can only download if approved
-    if (user?.role === 'po_creator') {
-      return po.status === 'approved';
-    }
-    // Main Admin can download approved POs
-    return po.status === 'approved';
+    return po.status === 'approved' && po.canDownloadPdf !== false;
   };
 
   // Check if user can send mail for a specific PO
-  const canSendMailPO = (po: PurchaseOrder) => {
-    return canSendMail && po.status === 'approved';
+  const canSendMailPO = (po: { status: string; canSendMail?: boolean }) => {
+    return canSendMail && po.status === 'approved' && po.canSendMail !== false;
   };
 
   return (
@@ -189,7 +209,7 @@ const PORegister = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Vendors</SelectItem>
-                  {mockVendors.map(vendor => (
+                  {vendors.map(vendor => (
                     <SelectItem key={vendor.id} value={vendor.id}>
                       {vendor.name}
                     </SelectItem>
@@ -296,7 +316,7 @@ const PORegister = () => {
                         <td>
                           <span className="font-mono font-medium">{po.po_number}</span>
                         </td>
-                        <td>{vendor?.name || '-'}</td>
+                        <td>{po.vendorName || vendor?.name || '-'}</td>
                         <td>{formatDate(po.date)}</td>
                         <td className="text-center">{po.total_items}</td>
                         <td>

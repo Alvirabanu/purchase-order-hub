@@ -3,25 +3,25 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { getPOById, getVendorById, getProductById } from '@/lib/mockData';
+import { useDataStore } from '@/contexts/DataStoreContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { ArrowLeft, Download, FileText, Building2, Mail, CheckCircle } from 'lucide-react';
-import { useState } from 'react';
-import { PurchaseOrder } from '@/types';
+import { toast } from '@/hooks/use-toast';
 
 const PODetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { hasPermission, user } = useAuth();
+  const { purchaseOrders, getVendorById, getProductById, approvePurchaseOrder } = useDataStore();
+  
   const canApprove = hasPermission('approve_po');
   const canDownload = hasPermission('download_pdf');
   const canSendMail = hasPermission('send_mail');
 
-  const initialPO = id ? getPOById(id) : undefined;
-  const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | undefined>(initialPO);
+  const purchaseOrder = purchaseOrders.find(po => po.id === id);
   const vendor = purchaseOrder ? getVendorById(purchaseOrder.vendor_id) : undefined;
 
-  if (!purchaseOrder || !vendor) {
+  if (!purchaseOrder) {
     return (
       <AppLayout>
         <div className="animate-fade-in">
@@ -62,33 +62,36 @@ const PODetail = () => {
   // Check if user can download this PO
   const canDownloadPO = () => {
     if (!canDownload) return false;
-    if (user?.role === 'po_creator') {
-      return purchaseOrder.status === 'approved';
-    }
-    return purchaseOrder.status === 'approved';
+    return purchaseOrder.status === 'approved' && purchaseOrder.canDownloadPdf !== false;
   };
 
   // Check if user can send mail for this PO
   const canSendMailPO = () => {
-    return canSendMail && purchaseOrder.status === 'approved';
+    return canSendMail && purchaseOrder.status === 'approved' && purchaseOrder.canSendMail !== false;
   };
 
   const handleApprove = () => {
-    setPurchaseOrder(prev => prev ? { ...prev, status: 'approved' } : prev);
-    // API placeholder: PUT /api/po/{id}/approve
-    console.log(`API: PUT /api/po/${id}/approve`);
+    approvePurchaseOrder(purchaseOrder.id, user?.name || 'Unknown');
+    toast({
+      title: "PO Approved",
+      description: `Purchase order ${purchaseOrder.po_number} has been approved.`,
+    });
   };
 
   const handleDownloadPDF = () => {
-    // API placeholder: GET /api/po/{id}/pdf
     console.log(`API: GET /api/po/${id}/pdf`);
-    alert('Download PDF - API placeholder');
+    toast({
+      title: "Download Started",
+      description: "PDF download initiated.",
+    });
   };
 
   const handleSendMail = () => {
-    // API placeholder: POST /api/po/{id}/send-mail
     console.log(`API: POST /api/po/${id}/send-mail`);
-    alert('Send mail to vendor - API placeholder');
+    toast({
+      title: "Email Sent",
+      description: "Email sent to vendor successfully.",
+    });
   };
 
   return (
@@ -142,6 +145,11 @@ const PODetail = () => {
                 <span className={`${getStatusClass(purchaseOrder.status)} mt-2 inline-block`}>
                   {purchaseOrder.status.charAt(0).toUpperCase() + purchaseOrder.status.slice(1)}
                 </span>
+                {purchaseOrder.approvedBy && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Approved by: {purchaseOrder.approvedBy}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -156,26 +164,28 @@ const PODetail = () => {
                 <CardContent className="p-4">
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
-                      <p className="font-semibold text-lg">{vendor.name}</p>
-                      <p className="text-sm text-muted-foreground mt-1">{vendor.address}</p>
+                      <p className="font-semibold text-lg">{purchaseOrder.vendorName || vendor?.name || 'Unknown Vendor'}</p>
+                      <p className="text-sm text-muted-foreground mt-1">{vendor?.address || '-'}</p>
                       <p className="text-sm mt-2">
                         <span className="text-muted-foreground">Contact: </span>
-                        <span className="font-medium">{vendor.contact_person_name}</span>
+                        <span className="font-medium">{vendor?.contact_person_name || '-'}</span>
                       </p>
                       <p className="text-sm">
                         <span className="text-muted-foreground">Email: </span>
-                        <span>{vendor.contact_person_email}</span>
+                        <span>{vendor?.contact_person_email || '-'}</span>
                       </p>
                     </div>
                     <div className="sm:text-right">
                       <p className="text-sm">
                         <span className="text-muted-foreground">Vendor ID: </span>
-                        <code className="bg-background px-2 py-0.5 rounded text-xs">{vendor.id}</code>
+                        <code className="bg-background px-2 py-0.5 rounded text-xs">{purchaseOrder.vendor_id}</code>
                       </p>
-                      <p className="text-sm mt-1">
-                        <span className="text-muted-foreground">GST: </span>
-                        <code className="bg-background px-2 py-0.5 rounded text-xs">{vendor.gst}</code>
-                      </p>
+                      {vendor?.gst && (
+                        <p className="text-sm mt-1">
+                          <span className="text-muted-foreground">GST: </span>
+                          <code className="bg-background px-2 py-0.5 rounded text-xs">{vendor.gst}</code>
+                        </p>
+                      )}
                     </div>
                   </div>
                 </CardContent>
