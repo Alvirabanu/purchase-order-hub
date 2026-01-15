@@ -4,28 +4,29 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { mockPurchaseOrders, getVendorById } from '@/lib/mockData';
-import { PurchaseOrder } from '@/types';
+import { useDataStore } from '@/contexts/DataStoreContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Eye, CheckCircle, ClipboardList } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 const Approvals = () => {
   const navigate = useNavigate();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
+  const { purchaseOrders, getVendorById, approvePurchaseOrder, approvePurchaseOrders } = useDataStore();
+  
   const canApprove = hasPermission('approve_po');
   const canBulkApprove = hasPermission('bulk_approve_po');
 
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(mockPurchaseOrders);
   const [selectedPOs, setSelectedPOs] = useState<Set<string>>(new Set());
 
   const pendingPOs = purchaseOrders.filter(po => po.status === 'created');
 
-  const getStatusClass = (status: PurchaseOrder['status']) => {
-    const statusClasses = {
+  const getStatusClass = (status: string) => {
+    const statusClasses: Record<string, string> = {
       created: 'status-badge status-pending',
       approved: 'status-badge status-approved',
     };
-    return statusClasses[status];
+    return statusClasses[status] || 'status-badge';
   };
 
   const formatDate = (dateStr: string) => {
@@ -57,21 +58,35 @@ const Approvals = () => {
   };
 
   const handleApprovePO = (id: string) => {
-    setPurchaseOrders(prev => prev.map(po => 
-      po.id === id ? { ...po, status: 'approved' as const } : po
-    ));
+    approvePurchaseOrder(id, user?.name || 'Approval Admin');
     setSelectedPOs(prev => {
       const newSet = new Set(prev);
       newSet.delete(id);
       return newSet;
     });
+    toast({
+      title: "PO Approved",
+      description: "Purchase order has been approved successfully.",
+    });
   };
 
   const handleBulkApprove = () => {
-    setPurchaseOrders(prev => prev.map(po => 
-      selectedPOs.has(po.id) ? { ...po, status: 'approved' as const } : po
-    ));
+    if (selectedPOs.size === 0) {
+      toast({
+        title: "No POs selected",
+        description: "Please select at least one PO to approve.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    approvePurchaseOrders(Array.from(selectedPOs), user?.name || 'Approval Admin');
+    const count = selectedPOs.size;
     setSelectedPOs(new Set());
+    toast({
+      title: "Bulk Approval Complete",
+      description: `${count} purchase order(s) approved successfully.`,
+    });
   };
 
   const allSelected = pendingPOs.length > 0 && pendingPOs.every(po => selectedPOs.has(po.id));
@@ -146,7 +161,7 @@ const Approvals = () => {
                         <td>
                           <span className="font-mono font-medium">{po.po_number}</span>
                         </td>
-                        <td>{vendor?.name || '-'}</td>
+                        <td>{po.vendorName || vendor?.name || '-'}</td>
                         <td>{formatDate(po.date)}</td>
                         <td className="text-center">{po.total_items}</td>
                         <td>

@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { mockProducts, getVendorById } from '@/lib/mockData';
+import { useDataStore, ExtendedPurchaseOrder } from '@/contexts/DataStoreContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Product } from '@/types';
 import { 
   Plus, 
@@ -17,30 +18,28 @@ import {
   Package
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from '@/hooks/use-toast';
 
 interface SelectedProduct {
   product: Product;
   quantity: number;
 }
 
-interface GeneratedPO {
-  po_number: string;
-  vendor_id: string;
-  items: { product_id: string; quantity: number }[];
-}
-
 const CreatePO = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { products, getVendorById, addPurchaseOrders, getNextPONumber } = useDataStore();
+  
   const [poDate, setPODate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedProducts, setSelectedProducts] = useState<Map<string, SelectedProduct>>(new Map());
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedPOs, setGeneratedPOs] = useState<GeneratedPO[]>([]);
+  const [generatedPONumbers, setGeneratedPONumbers] = useState<string[]>([]);
   const [showSuccess, setShowSuccess] = useState(false);
 
   // Filter products that have include_in_create_po = true
   const availableProducts = useMemo(() => {
-    return mockProducts.filter(p => p.include_in_create_po);
-  }, []);
+    return products.filter(p => p.include_in_create_po);
+  }, [products]);
 
   const handleIntegerInput = (value: string): number => {
     const parsed = parseInt(value, 10);
@@ -106,38 +105,86 @@ const CreatePO = () => {
     });
     
     return groups;
-  }, [selectedProducts]);
+  }, [selectedProducts, getVendorById]);
 
   const totalSelectedCount = selectedProducts.size;
   const canGenerate = totalSelectedCount > 0 && 
     Array.from(selectedProducts.values()).every(item => item.quantity > 0);
 
   const handleGeneratePO = async () => {
-    if (!canGenerate) return;
+    if (!canGenerate) {
+      toast({
+        title: "Validation Error",
+        description: "Please select at least one product with a valid quantity.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate all quantities are > 0
+    const invalidItems = Array.from(selectedProducts.values()).filter(item => item.quantity <= 0);
+    if (invalidItems.length > 0) {
+      toast({
+        title: "Validation Error",
+        description: "All selected products must have a quantity greater than 0.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsGenerating(true);
 
-    // Simulate API call: POST /api/po/generate
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    // Simulate API call
+    await new Promise(resolve => setTimeout(resolve, 800));
 
     // Generate PO for each vendor with status "Created"
-    const generated: GeneratedPO[] = Object.entries(groupedByVendor).map(([vendorId, group], index) => ({
-      po_number: `PO-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}${index}`,
-      vendor_id: vendorId,
-      items: group.items.map(item => ({
-        product_id: item.product.id,
-        quantity: item.quantity
-      }))
-    }));
+    const newPOs: ExtendedPurchaseOrder[] = [];
+    const poNumbers: string[] = [];
 
-    setGeneratedPOs(generated);
+    Object.entries(groupedByVendor).forEach(([vendorId, group]) => {
+      const poNumber = getNextPONumber();
+      poNumbers.push(poNumber);
+      
+      const po: ExtendedPurchaseOrder = {
+        id: `po_${Date.now()}_${vendorId}`,
+        po_number: poNumber,
+        vendor_id: vendorId,
+        vendorName: group.vendor?.name || 'Unknown Vendor',
+        date: poDate,
+        total_items: group.items.reduce((sum, item) => sum + item.quantity, 0),
+        status: 'created',
+        createdByRole: user?.role || 'unknown',
+        approvedBy: null,
+        approvedAt: null,
+        canDownloadPdf: false,
+        canSendMail: false,
+        items: group.items.map((item, index) => ({
+          id: `item_${Date.now()}_${index}`,
+          po_id: `po_${Date.now()}_${vendorId}`,
+          product_id: item.product.id,
+          quantity: item.quantity,
+        })),
+      };
+      
+      newPOs.push(po);
+    });
+
+    // Save to shared store
+    addPurchaseOrders(newPOs);
+    
+    setGeneratedPONumbers(poNumbers);
     setShowSuccess(true);
     setIsGenerating(false);
+
+    toast({
+      title: "Success!",
+      description: `${newPOs.length} Purchase Order${newPOs.length > 1 ? 's' : ''} created successfully.`,
+    });
   };
 
   const resetForm = () => {
     setSelectedProducts(new Map());
-    setGeneratedPOs([]);
+    setGeneratedPONumbers([]);
     setShowSuccess(false);
   };
 
@@ -152,40 +199,35 @@ const CreatePO = () => {
               </div>
               <h2 className="text-2xl font-bold mb-2">Purchase Orders Created!</h2>
               <p className="text-muted-foreground mb-8">
-                {generatedPOs.length} PO{generatedPOs.length > 1 ? 's' : ''} have been created with status "Created" and grouped by vendor.
+                {generatedPONumbers.length} PO{generatedPONumbers.length > 1 ? 's' : ''} have been created with status "Created" and grouped by vendor.
               </p>
 
               <div className="space-y-4 mb-8">
-                {generatedPOs.map((po) => {
-                  const vendor = getVendorById(po.vendor_id);
-                  return (
-                    <Card key={po.po_number} className="text-left">
-                      <CardContent className="p-4">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                          <div>
-                            <p className="font-semibold text-lg">{po.po_number}</p>
-                            <p className="text-muted-foreground text-sm">{vendor?.name}</p>
-                            <p className="text-sm mt-1">{po.items.length} item{po.items.length > 1 ? 's' : ''}</p>
-                            <span className="inline-flex items-center rounded-md bg-primary/10 text-primary px-2 py-1 text-xs font-medium mt-2">
-                              Created
-                            </span>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => navigate('/po-register')}
-                              className="gap-2"
-                            >
-                              <Eye className="h-4 w-4" />
-                              View PO
-                            </Button>
-                          </div>
+                {generatedPONumbers.map((poNumber) => (
+                  <Card key={poNumber} className="text-left">
+                    <CardContent className="p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                          <p className="font-semibold text-lg">{poNumber}</p>
+                          <span className="inline-flex items-center rounded-md bg-primary/10 text-primary px-2 py-1 text-xs font-medium mt-2">
+                            Created
+                          </span>
                         </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => navigate('/po-register')}
+                            className="gap-2"
+                          >
+                            <Eye className="h-4 w-4" />
+                            View in Register
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
