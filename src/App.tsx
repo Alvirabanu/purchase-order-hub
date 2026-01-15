@@ -3,7 +3,6 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "./contexts/AuthContext";
 import { DataStoreProvider } from "./contexts/DataStoreContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -20,30 +19,28 @@ const App = () => {
   const [queryClient] = useState(() => new QueryClient());
 
   return (
-    <QueryClientProvider client={queryClient} key="query-client">
-      <AuthProvider key="auth-provider">
-        <DataStoreProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <Routes>
-                <Route path="/" element={<Navigate to="/login" replace />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/products" element={<Products />} />
-                <Route path="/vendors" element={<Vendors />} />
-                <Route path="/create-po" element={<CreatePO />} />
-                <Route path="/po-register" element={<PORegister />} />
-                <Route path="/po/:id" element={<PODetail />} />
-                <Route path="/approvals" element={<Approvals />} />
-                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </BrowserRouter>
-          </TooltipProvider>
-        </DataStoreProvider>
-      </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <DataStoreProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Navigate to="/login" replace />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/products" element={<Products />} />
+              <Route path="/vendors" element={<Vendors />} />
+              <Route path="/create-po" element={<CreatePO />} />
+              <Route path="/po-register" element={<PORegister />} />
+              <Route path="/po/:id" element={<PODetail />} />
+              <Route path="/approvals" element={<Approvals />} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </DataStoreProvider>
     </QueryClientProvider>
   );
 };
