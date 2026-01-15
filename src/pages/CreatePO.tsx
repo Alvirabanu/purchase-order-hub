@@ -11,13 +11,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { mockProducts, mockSuppliers, getSupplierById, getProductById } from '@/lib/mockData';
+import { mockProducts, mockVendors, getVendorById, getProductById } from '@/lib/mockData';
 import { Product } from '@/types';
 import { 
   Plus, 
   Trash2, 
   FileText, 
-  Download, 
   Eye, 
   CheckCircle2, 
   Loader2,
@@ -33,7 +32,7 @@ interface POLineItem {
 
 interface GeneratedPO {
   po_number: string;
-  supplier_id: string;
+  vendor_id: string;
   items: POLineItem[];
 }
 
@@ -46,6 +45,11 @@ const CreatePO = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedPOs, setGeneratedPOs] = useState<GeneratedPO[]>([]);
   const [showSuccess, setShowSuccess] = useState(false);
+
+  // Filter products that have include_in_create_po = true
+  const availableProducts = useMemo(() => {
+    return mockProducts.filter(p => p.include_in_create_po);
+  }, []);
 
   const addLineItem = () => {
     setLineItems([
@@ -70,31 +74,36 @@ const CreatePO = () => {
     return mockProducts.find(p => p.id === productId);
   };
 
+  const handleIntegerInput = (value: string): number => {
+    const parsed = parseInt(value, 10);
+    return isNaN(parsed) || parsed < 0 ? 0 : parsed;
+  };
+
   const handleGeneratePO = async () => {
     const validItems = lineItems.filter(item => item.product_id && item.quantity > 0);
     if (validItems.length === 0) return;
 
     setIsGenerating(true);
 
-    // Simulate API call
+    // Simulate API call: POST /api/po/generate
     await new Promise(resolve => setTimeout(resolve, 1500));
 
-    // Group items by supplier
-    const itemsBySupplier: Record<string, POLineItem[]> = {};
+    // Group items by vendor
+    const itemsByVendor: Record<string, POLineItem[]> = {};
     validItems.forEach(item => {
       const product = getProductDetails(item.product_id);
       if (product) {
-        if (!itemsBySupplier[product.supplier_id]) {
-          itemsBySupplier[product.supplier_id] = [];
+        if (!itemsByVendor[product.vendor_id]) {
+          itemsByVendor[product.vendor_id] = [];
         }
-        itemsBySupplier[product.supplier_id].push(item);
+        itemsByVendor[product.vendor_id].push(item);
       }
     });
 
-    // Generate PO for each supplier
-    const generated: GeneratedPO[] = Object.entries(itemsBySupplier).map(([supplierId, items], index) => ({
+    // Generate PO for each vendor with status "Created"
+    const generated: GeneratedPO[] = Object.entries(itemsByVendor).map(([vendorId, items], index) => ({
       po_number: `PO-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}${index}`,
-      supplier_id: supplierId,
+      vendor_id: vendorId,
       items
     }));
 
@@ -113,6 +122,11 @@ const CreatePO = () => {
     return lineItems.filter(item => item.product_id && item.quantity > 0).length;
   }, [lineItems]);
 
+  // Check if all fields are filled
+  const canGenerate = useMemo(() => {
+    return lineItems.every(item => item.product_id && item.quantity > 0) && lineItems.length > 0;
+  }, [lineItems]);
+
   if (showSuccess) {
     return (
       <AppLayout>
@@ -122,22 +136,25 @@ const CreatePO = () => {
               <div className="h-16 w-16 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-4">
                 <CheckCircle2 className="h-8 w-8 text-success" />
               </div>
-              <h2 className="text-2xl font-bold mb-2">Purchase Orders Generated!</h2>
+              <h2 className="text-2xl font-bold mb-2">Purchase Orders Created!</h2>
               <p className="text-muted-foreground mb-8">
-                {generatedPOs.length} PO{generatedPOs.length > 1 ? 's' : ''} have been created and grouped by supplier.
+                {generatedPOs.length} PO{generatedPOs.length > 1 ? 's' : ''} have been created with status "Created" and grouped by vendor.
               </p>
 
               <div className="space-y-4 mb-8">
                 {generatedPOs.map((po) => {
-                  const supplier = getSupplierById(po.supplier_id);
+                  const vendor = getVendorById(po.vendor_id);
                   return (
                     <Card key={po.po_number} className="text-left">
                       <CardContent className="p-4">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                           <div>
                             <p className="font-semibold text-lg">{po.po_number}</p>
-                            <p className="text-muted-foreground text-sm">{supplier?.name}</p>
+                            <p className="text-muted-foreground text-sm">{vendor?.name}</p>
                             <p className="text-sm mt-1">{po.items.length} item{po.items.length > 1 ? 's' : ''}</p>
+                            <span className="inline-flex items-center rounded-md bg-primary/10 text-primary px-2 py-1 text-xs font-medium mt-2">
+                              Created
+                            </span>
                           </div>
                           <div className="flex gap-2">
                             <Button
@@ -148,14 +165,6 @@ const CreatePO = () => {
                             >
                               <Eye className="h-4 w-4" />
                               View PO
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-2"
-                            >
-                              <Download className="h-4 w-4" />
-                              Download PDF
                             </Button>
                           </div>
                         </div>
@@ -187,7 +196,7 @@ const CreatePO = () => {
         <div className="page-header">
           <div>
             <h1 className="page-title">Create Purchase Order</h1>
-            <p className="text-muted-foreground text-sm mt-1">Add items and generate purchase orders by supplier</p>
+            <p className="text-muted-foreground text-sm mt-1">Add items and generate purchase orders by vendor</p>
           </div>
         </div>
 
@@ -222,58 +231,69 @@ const CreatePO = () => {
                 <thead>
                   <tr className="border-b">
                     <th className="text-left py-3 px-2 text-sm font-medium text-muted-foreground">Product</th>
-                    <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground w-32">Current Stock</th>
-                    <th className="text-left py-3 px-2 text-sm font-medium text-muted-foreground w-48">Supplier</th>
-                    <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground w-32">Quantity</th>
+                    <th className="text-center py-3 px-2 text-sm font-medium text-muted-foreground w-24">Unit</th>
+                    <th className="text-right py-3 px-2 text-sm font-medium text-muted-foreground w-32">PO Quantity</th>
+                    <th className="text-left py-3 px-2 text-sm font-medium text-muted-foreground w-48">Vendor</th>
                     <th className="w-12"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {lineItems.map((item) => {
                     const product = item.product_id ? getProductDetails(item.product_id) : null;
-                    const supplier = product ? getSupplierById(product.supplier_id) : null;
+                    const vendor = product ? getVendorById(product.vendor_id) : null;
                     return (
                       <tr key={item.id} className="border-b last:border-b-0">
                         <td className="py-3 px-2">
                           <Select
                             value={item.product_id}
-                            onValueChange={(value) => updateLineItem(item.id, 'product_id', value)}
+                            onValueChange={(value) => {
+                              const selectedProduct = getProductDetails(value);
+                              updateLineItem(item.id, 'product_id', value);
+                              if (selectedProduct) {
+                                updateLineItem(item.id, 'quantity', selectedProduct.default_po_quantity);
+                              }
+                            }}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Select a product" />
                             </SelectTrigger>
                             <SelectContent>
-                              {mockProducts.map(p => (
+                              {availableProducts.map(p => (
                                 <SelectItem key={p.id} value={p.id}>
-                                  {p.name}
+                                  <div className="flex flex-col">
+                                    <span>{p.name}</span>
+                                    <span className="text-xs text-muted-foreground">{p.brand} • {p.category}</span>
+                                  </div>
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
-                        </td>
-                        <td className="py-3 px-2 text-right">
-                          {product ? (
-                            <span className={product.current_stock <= product.reorder_level ? 'text-destructive font-medium' : ''}>
-                              {product.current_stock}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
+                          {product && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {product.brand} • {product.category}
+                            </div>
                           )}
                         </td>
-                        <td className="py-3 px-2">
+                        <td className="py-3 px-2 text-center">
                           <span className="text-muted-foreground">
-                            {supplier?.name || '-'}
+                            {product?.unit || '-'}
                           </span>
                         </td>
                         <td className="py-3 px-2">
                           <Input
                             type="number"
-                            min="0"
+                            min="1"
+                            step="1"
                             value={item.quantity || ''}
-                            onChange={(e) => updateLineItem(item.id, 'quantity', parseInt(e.target.value) || 0)}
+                            onChange={(e) => updateLineItem(item.id, 'quantity', handleIntegerInput(e.target.value))}
                             className="w-full text-right"
                             placeholder="0"
                           />
+                        </td>
+                        <td className="py-3 px-2">
+                          <span className="text-muted-foreground">
+                            {vendor?.name || '-'}
+                          </span>
                         </td>
                         <td className="py-3 px-2">
                           <Button
@@ -297,7 +317,7 @@ const CreatePO = () => {
             <div className="md:hidden space-y-4">
               {lineItems.map((item, index) => {
                 const product = item.product_id ? getProductDetails(item.product_id) : null;
-                const supplier = product ? getSupplierById(product.supplier_id) : null;
+                const vendor = product ? getVendorById(product.vendor_id) : null;
                 return (
                   <Card key={item.id} className="relative">
                     <CardContent className="p-4 space-y-4">
@@ -318,15 +338,24 @@ const CreatePO = () => {
                         <Label className="text-sm">Product</Label>
                         <Select
                           value={item.product_id}
-                          onValueChange={(value) => updateLineItem(item.id, 'product_id', value)}
+                          onValueChange={(value) => {
+                            const selectedProduct = getProductDetails(value);
+                            updateLineItem(item.id, 'product_id', value);
+                            if (selectedProduct) {
+                              updateLineItem(item.id, 'quantity', selectedProduct.default_po_quantity);
+                            }
+                          }}
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Select a product" />
                           </SelectTrigger>
                           <SelectContent>
-                            {mockProducts.map(p => (
+                            {availableProducts.map(p => (
                               <SelectItem key={p.id} value={p.id}>
-                                {p.name}
+                                <div className="flex flex-col">
+                                  <span>{p.name}</span>
+                                  <span className="text-xs text-muted-foreground">{p.brand} • {p.category}</span>
+                                </div>
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -336,25 +365,28 @@ const CreatePO = () => {
                       {product && (
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
-                            <span className="text-muted-foreground">Current Stock:</span>
-                            <span className={`ml-2 font-medium ${product.current_stock <= product.reorder_level ? 'text-destructive' : ''}`}>
-                              {product.current_stock}
-                            </span>
+                            <span className="text-muted-foreground">Brand:</span>
+                            <span className="ml-2 font-medium">{product.brand}</span>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Supplier:</span>
-                            <span className="ml-2">{supplier?.name}</span>
+                            <span className="text-muted-foreground">Unit:</span>
+                            <span className="ml-2">{product.unit}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Vendor:</span>
+                            <span className="ml-2">{vendor?.name}</span>
                           </div>
                         </div>
                       )}
 
                       <div className="space-y-2">
-                        <Label className="text-sm">Purchase Quantity</Label>
+                        <Label className="text-sm">PO Quantity</Label>
                         <Input
                           type="number"
-                          min="0"
+                          min="1"
+                          step="1"
                           value={item.quantity || ''}
-                          onChange={(e) => updateLineItem(item.id, 'quantity', parseInt(e.target.value) || 0)}
+                          onChange={(e) => updateLineItem(item.id, 'quantity', handleIntegerInput(e.target.value))}
                           placeholder="Enter quantity"
                         />
                       </div>
@@ -376,7 +408,7 @@ const CreatePO = () => {
           <Button
             size="lg"
             onClick={handleGeneratePO}
-            disabled={validItemsCount === 0 || isGenerating}
+            disabled={!canGenerate || isGenerating}
             className="gap-2 min-w-[200px]"
           >
             {isGenerating ? (

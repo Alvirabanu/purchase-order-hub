@@ -13,10 +13,11 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   LayoutDashboard,
   Package,
-  Users,
+  Building2,
   FilePlus,
   ClipboardList,
   LogOut,
@@ -25,18 +26,28 @@ import {
   Menu,
 } from 'lucide-react';
 
-const navItems = [
-  { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
-  { title: 'Create PO', url: '/create-po', icon: FilePlus },
-  { title: 'Products', url: '/products', icon: Package },
-  { title: 'Suppliers', url: '/suppliers', icon: Users },
-  { title: 'PO Register', url: '/po-register', icon: ClipboardList },
-];
+const getRoleLabel = (role: string) => {
+  switch (role) {
+    case 'main_admin': return 'Main Admin';
+    case 'po_creator': return 'PO Creator';
+    case 'approval_admin': return 'Approval Admin';
+    default: return role;
+  }
+};
+
+const getRoleColor = (role: string) => {
+  switch (role) {
+    case 'main_admin': return 'bg-primary text-primary-foreground';
+    case 'po_creator': return 'bg-success text-white';
+    case 'approval_admin': return 'bg-warning text-white';
+    default: return 'bg-secondary';
+  }
+};
 
 export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { logout, user } = useAuth();
+  const { logout, user, hasPermission } = useAuth();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === 'collapsed';
 
@@ -44,6 +55,15 @@ export function AppSidebar() {
     logout();
     navigate('/login');
   };
+
+  // Build nav items based on permissions
+  const navItems = [
+    { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard, show: true },
+    { title: 'Create PO', url: '/create-po', icon: FilePlus, show: hasPermission('create_po') },
+    { title: 'Products', url: '/products', icon: Package, show: true },
+    { title: 'Vendors', url: '/vendors', icon: Building2, show: true },
+    { title: 'PO Register', url: '/po-register', icon: ClipboardList, show: hasPermission('view_po_register') },
+  ].filter(item => item.show);
 
   return (
     <Sidebar collapsible="icon">
@@ -108,7 +128,10 @@ export function AppSidebar() {
         {!isCollapsed && user && (
           <div className="mb-3 px-1">
             <p className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</p>
-            <p className="text-xs text-sidebar-muted truncate">{user.email}</p>
+            <p className="text-xs text-sidebar-muted truncate mb-2">{user.email}</p>
+            <Badge className={`text-xs ${getRoleColor(user.role)}`}>
+              {getRoleLabel(user.role)}
+            </Badge>
           </div>
         )}
         <Button

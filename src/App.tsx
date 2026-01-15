@@ -7,7 +7,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Products from "./pages/Products";
-import Suppliers from "./pages/Suppliers";
+import Vendors from "./pages/Vendors";
 import CreatePO from "./pages/CreatePO";
 import PORegister from "./pages/PORegister";
 import PODetail from "./pages/PODetail";
@@ -27,7 +27,7 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/products" element={<Products />} />
-            <Route path="/suppliers" element={<Suppliers />} />
+            <Route path="/vendors" element={<Vendors />} />
             <Route path="/create-po" element={<CreatePO />} />
             <Route path="/po-register" element={<PORegister />} />
             <Route path="/po/:id" element={<PODetail />} />

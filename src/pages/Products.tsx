@@ -3,6 +3,8 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -19,32 +21,44 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
-import { mockProducts, mockSuppliers, getSupplierById } from '@/lib/mockData';
+import { mockProducts, mockVendors, getVendorById } from '@/lib/mockData';
 import { Product } from '@/types';
-import { Plus, Search, Upload, Pencil, Trash2, Package, AlertCircle } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { Plus, Search, Pencil, Trash2, Package, AlertCircle, Download, FileSpreadsheet } from 'lucide-react';
 
 const Products = () => {
+  const { hasPermission } = useAuth();
+  const canManageProducts = hasPermission('manage_products');
+  const canBulkDelete = hasPermission('bulk_delete_products');
+  const canToggleInclude = hasPermission('toggle_include_in_po');
+
   const [products, setProducts] = useState<Product[]>(mockProducts);
   const [searchQuery, setSearchQuery] = useState('');
-  const [supplierFilter, setSupplierFilter] = useState<string>('all');
+  const [vendorFilter, setVendorFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [formData, setFormData] = useState({
     name: '',
     category: '',
-    supplier_id: '',
+    brand: '',
+    vendor_id: '',
     current_stock: 0,
     reorder_level: 0,
+    unit: 'pcs' as 'pcs' | 'boxes',
+    default_po_quantity: 0,
+    include_in_create_po: true,
   });
 
   const categories = [...new Set(products.map(p => p.category))];
 
   const filteredProducts = products.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesSupplier = supplierFilter === 'all' || product.supplier_id === supplierFilter;
+    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      product.brand.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesVendor = vendorFilter === 'all' || product.vendor_id === vendorFilter;
     const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
-    return matchesSearch && matchesSupplier && matchesCategory;
+    return matchesSearch && matchesVendor && matchesCategory;
   });
 
   const handleOpenModal = (product?: Product) => {
@@ -53,13 +67,27 @@ const Products = () => {
       setFormData({
         name: product.name,
         category: product.category,
-        supplier_id: product.supplier_id,
+        brand: product.brand,
+        vendor_id: product.vendor_id,
         current_stock: product.current_stock,
         reorder_level: product.reorder_level,
+        unit: product.unit,
+        default_po_quantity: product.default_po_quantity,
+        include_in_create_po: product.include_in_create_po,
       });
     } else {
       setEditingProduct(null);
-      setFormData({ name: '', category: '', supplier_id: '', current_stock: 0, reorder_level: 0 });
+      setFormData({ 
+        name: '', 
+        category: '', 
+        brand: '',
+        vendor_id: '', 
+        current_stock: 0, 
+        reorder_level: 0,
+        unit: 'pcs',
+        default_po_quantity: 0,
+        include_in_create_po: true,
+      });
     }
     setIsModalOpen(true);
   };
@@ -81,7 +109,57 @@ const Products = () => {
 
   const handleDelete = (id: string) => {
     setProducts(products.filter(p => p.id !== id));
+    setSelectedProducts(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(id);
+      return newSet;
+    });
   };
+
+  const handleBulkDelete = () => {
+    setProducts(products.filter(p => !selectedProducts.has(p.id)));
+    setSelectedProducts(new Set());
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedProducts(new Set(filteredProducts.map(p => p.id)));
+    } else {
+      setSelectedProducts(new Set());
+    }
+  };
+
+  const handleSelectProduct = (id: string, checked: boolean) => {
+    setSelectedProducts(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(id);
+      } else {
+        newSet.delete(id);
+      }
+      return newSet;
+    });
+  };
+
+  const handleToggleInclude = (id: string, include: boolean) => {
+    setProducts(products.map(p => 
+      p.id === id ? { ...p, include_in_create_po: include } : p
+    ));
+  };
+
+  const handleDownloadTemplate = () => {
+    // API placeholder for downloading Excel template
+    console.log('API: GET /api/products/template');
+    alert('Download Blank Excel Template - API placeholder');
+  };
+
+  const handleIntegerInput = (value: string): number => {
+    const parsed = parseInt(value, 10);
+    return isNaN(parsed) || parsed < 0 ? 0 : parsed;
+  };
+
+  const allSelected = filteredProducts.length > 0 && filteredProducts.every(p => selectedProducts.has(p.id));
+  const someSelected = selectedProducts.size > 0;
 
   return (
     <AppLayout>
@@ -91,15 +169,17 @@ const Products = () => {
             <h1 className="page-title">Products</h1>
             <p className="text-muted-foreground text-sm mt-1">Manage your product catalog</p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" className="gap-2">
-              <Upload className="h-4 w-4" />
-              Bulk Upload
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" className="gap-2" onClick={handleDownloadTemplate}>
+              <FileSpreadsheet className="h-4 w-4" />
+              Download Blank Excel Template
             </Button>
-            <Button onClick={() => handleOpenModal()} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Add Product
-            </Button>
+            {canManageProducts && (
+              <Button onClick={() => handleOpenModal()} className="gap-2">
+                <Plus className="h-4 w-4" />
+                Add Product
+              </Button>
+            )}
           </div>
         </div>
 
@@ -116,15 +196,15 @@ const Products = () => {
                   className="pl-10"
                 />
               </div>
-              <Select value={supplierFilter} onValueChange={setSupplierFilter}>
+              <Select value={vendorFilter} onValueChange={setVendorFilter}>
                 <SelectTrigger className="w-full sm:w-[200px]">
-                  <SelectValue placeholder="All Suppliers" />
+                  <SelectValue placeholder="All Vendors" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Suppliers</SelectItem>
-                  {mockSuppliers.map(supplier => (
-                    <SelectItem key={supplier.id} value={supplier.id}>
-                      {supplier.name}
+                  <SelectItem value="all">All Vendors</SelectItem>
+                  {mockVendors.map(vendor => (
+                    <SelectItem key={vendor.id} value={vendor.id}>
+                      {vendor.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -146,6 +226,26 @@ const Products = () => {
           </CardContent>
         </Card>
 
+        {/* Bulk Actions */}
+        {canBulkDelete && someSelected && (
+          <Card className="mb-4 border-destructive/30 bg-destructive/5">
+            <CardContent className="p-4 flex items-center justify-between">
+              <span className="text-sm font-medium">
+                {selectedProducts.size} product{selectedProducts.size > 1 ? 's' : ''} selected
+              </span>
+              <Button 
+                variant="destructive" 
+                size="sm" 
+                onClick={handleBulkDelete}
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Bulk Delete
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Products Table */}
         <Card>
           <div className="overflow-x-auto">
@@ -153,27 +253,48 @@ const Products = () => {
               <table className="data-table">
                 <thead>
                   <tr>
+                    {canBulkDelete && (
+                      <th className="w-12">
+                        <Checkbox 
+                          checked={allSelected}
+                          onCheckedChange={handleSelectAll}
+                        />
+                      </th>
+                    )}
                     <th>Product Name</th>
+                    <th>Brand</th>
                     <th>Category</th>
-                    <th>Supplier</th>
+                    <th>Vendor</th>
                     <th className="text-right">Current Stock</th>
                     <th className="text-right">Reorder Level</th>
-                    <th className="text-right">Actions</th>
+                    <th>Unit</th>
+                    <th className="text-right">Default PO Qty</th>
+                    <th className="text-center">Include in PO</th>
+                    {canManageProducts && <th className="text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredProducts.map((product) => {
-                    const supplier = getSupplierById(product.supplier_id);
+                    const vendor = getVendorById(product.vendor_id);
                     const isLowStock = product.current_stock <= product.reorder_level;
                     return (
                       <tr key={product.id}>
+                        {canBulkDelete && (
+                          <td>
+                            <Checkbox 
+                              checked={selectedProducts.has(product.id)}
+                              onCheckedChange={(checked) => handleSelectProduct(product.id, !!checked)}
+                            />
+                          </td>
+                        )}
                         <td className="font-medium">{product.name}</td>
+                        <td>{product.brand}</td>
                         <td>
                           <span className="inline-flex items-center rounded-md bg-secondary px-2 py-1 text-xs font-medium">
                             {product.category}
                           </span>
                         </td>
-                        <td>{supplier?.name || '-'}</td>
+                        <td>{vendor?.name || '-'}</td>
                         <td className="text-right">
                           <span className={`font-medium ${isLowStock ? 'text-destructive' : ''}`}>
                             {product.current_stock}
@@ -183,26 +304,37 @@ const Products = () => {
                           )}
                         </td>
                         <td className="text-right">{product.reorder_level}</td>
-                        <td className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleOpenModal(product)}
-                              className="h-8 w-8"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDelete(product.id)}
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+                        <td>{product.unit}</td>
+                        <td className="text-right">{product.default_po_quantity}</td>
+                        <td className="text-center">
+                          <Switch
+                            checked={product.include_in_create_po}
+                            onCheckedChange={(checked) => handleToggleInclude(product.id, checked)}
+                            disabled={!canToggleInclude}
+                          />
                         </td>
+                        {canManageProducts && (
+                          <td className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleOpenModal(product)}
+                                className="h-8 w-8"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDelete(product.id)}
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -213,7 +345,7 @@ const Products = () => {
                 <Package className="h-12 w-12 text-muted-foreground/50 mb-4" />
                 <h3 className="text-lg font-medium mb-1">No products found</h3>
                 <p className="text-muted-foreground text-sm">
-                  {searchQuery || supplierFilter !== 'all' || categoryFilter !== 'all'
+                  {searchQuery || vendorFilter !== 'all' || categoryFilter !== 'all'
                     ? 'Try adjusting your filters'
                     : 'Get started by adding your first product'}
                 </p>
@@ -231,7 +363,7 @@ const Products = () => {
                 {editingProduct ? 'Update the product details below.' : 'Fill in the details to add a new product.'}
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
+            <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
               <div className="space-y-2">
                 <Label htmlFor="name">Product Name</Label>
                 <Input
@@ -251,18 +383,27 @@ const Products = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="supplier">Supplier</Label>
+                <Label htmlFor="brand">Brand</Label>
+                <Input
+                  id="brand"
+                  value={formData.brand}
+                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                  placeholder="e.g., Havells, Philips"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="vendor">Vendor</Label>
                 <Select
-                  value={formData.supplier_id}
-                  onValueChange={(value) => setFormData({ ...formData, supplier_id: value })}
+                  value={formData.vendor_id}
+                  onValueChange={(value) => setFormData({ ...formData, vendor_id: value })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a supplier" />
+                    <SelectValue placeholder="Select a vendor" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockSuppliers.map(supplier => (
-                      <SelectItem key={supplier.id} value={supplier.id}>
-                        {supplier.name}
+                    {mockVendors.map(vendor => (
+                      <SelectItem key={vendor.id} value={vendor.id}>
+                        {vendor.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -275,8 +416,9 @@ const Products = () => {
                     id="current_stock"
                     type="number"
                     value={formData.current_stock}
-                    onChange={(e) => setFormData({ ...formData, current_stock: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => setFormData({ ...formData, current_stock: handleIntegerInput(e.target.value) })}
                     min="0"
+                    step="1"
                   />
                 </div>
                 <div className="space-y-2">
@@ -285,10 +427,47 @@ const Products = () => {
                     id="reorder_level"
                     type="number"
                     value={formData.reorder_level}
-                    onChange={(e) => setFormData({ ...formData, reorder_level: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => setFormData({ ...formData, reorder_level: handleIntegerInput(e.target.value) })}
                     min="0"
+                    step="1"
                   />
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="unit">Unit</Label>
+                  <Select
+                    value={formData.unit}
+                    onValueChange={(value: 'pcs' | 'boxes') => setFormData({ ...formData, unit: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select unit" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pcs">pcs</SelectItem>
+                      <SelectItem value="boxes">boxes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="default_po_quantity">Default PO Quantity</Label>
+                  <Input
+                    id="default_po_quantity"
+                    type="number"
+                    value={formData.default_po_quantity}
+                    onChange={(e) => setFormData({ ...formData, default_po_quantity: handleIntegerInput(e.target.value) })}
+                    min="0"
+                    step="1"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="include_in_create_po">Include in Create PO</Label>
+                <Switch
+                  id="include_in_create_po"
+                  checked={formData.include_in_create_po}
+                  onCheckedChange={(checked) => setFormData({ ...formData, include_in_create_po: checked })}
+                />
               </div>
             </div>
             <DialogFooter>
