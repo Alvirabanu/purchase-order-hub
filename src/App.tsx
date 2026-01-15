@@ -5,15 +5,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { DataStoreProvider } from "@/contexts/DataStoreContext";
 import { useAuth } from "@/contexts/AuthContext";
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import Products from "./pages/Products";
-import Vendors from "./pages/Vendors";
-import CreatePO from "./pages/CreatePO";
-import PORegister from "./pages/PORegister";
-import PODetail from "./pages/PODetail";
-import Approvals from "./pages/Approvals";
-import NotFound from "./pages/NotFound";
+import Login from "@/pages/Login";
+import Dashboard from "@/pages/Dashboard";
+import Products from "@/pages/Products";
+import Vendors from "@/pages/Vendors";
+import CreatePO from "@/pages/CreatePO";
+import PORegister from "@/pages/PORegister";
+import PODetail from "@/pages/PODetail";
+import Approvals from "@/pages/Approvals";
+import NotFound from "@/pages/NotFound";
 import { useState } from "react";
 
 const AppContent = () => {
