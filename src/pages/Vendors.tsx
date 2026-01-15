@@ -93,12 +93,15 @@ const Vendors = () => {
             <h1 className="page-title">Vendors</h1>
             <p className="text-muted-foreground text-sm mt-1">Manage your vendor directory</p>
           </div>
-          {canManageVendors && (
-            <Button onClick={() => handleOpenModal()} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Add Vendor
-            </Button>
-          )}
+          <Button 
+            onClick={() => handleOpenModal()} 
+            className="gap-2"
+            disabled={!canManageVendors}
+            title={!canManageVendors ? 'No permission' : ''}
+          >
+            <Plus className="h-4 w-4" />
+            Add Vendor
+          </Button>
         </div>
 
         {/* Search */}
@@ -129,7 +132,7 @@ const Vendors = () => {
                     <th>GST Number</th>
                     <th>Contact Person</th>
                     <th>Contact Email</th>
-                    {canManageVendors && <th className="text-right">Actions</th>}
+                    <th className="text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -151,7 +154,6 @@ const Vendors = () => {
                       </td>
                       <td>{vendor.contact_person_name}</td>
                       <td className="text-muted-foreground">{vendor.contact_person_email}</td>
-                      {canManageVendors && (
                         <td className="text-right">
                           <div className="flex justify-end gap-1">
                             <Button
@@ -159,6 +161,8 @@ const Vendors = () => {
                               size="icon"
                               onClick={() => handleOpenModal(vendor)}
                               className="h-8 w-8"
+                              disabled={!canManageVendors}
+                              title={!canManageVendors ? 'No permission' : 'Edit'}
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
@@ -167,15 +171,16 @@ const Vendors = () => {
                               size="icon"
                               onClick={() => handleDelete(vendor.id)}
                               className="h-8 w-8 text-destructive hover:text-destructive"
+                              disabled={!canManageVendors}
+                              title={!canManageVendors ? 'No permission' : 'Delete'}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
                         </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
+                      </tr>
+                    ))}
+                  </tbody>
               </table>
             ) : (
               <div className="empty-state py-16">

@@ -24,7 +24,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { mockProducts, mockVendors, getVendorById } from '@/lib/mockData';
 import { Product } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { Plus, Search, Pencil, Trash2, Package, AlertCircle, Download, FileSpreadsheet } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Package, AlertCircle, FileSpreadsheet, Upload } from 'lucide-react';
 
 const Products = () => {
   const { hasPermission } = useAuth();
@@ -153,6 +153,12 @@ const Products = () => {
     alert('Download Blank Excel Template - API placeholder');
   };
 
+  const handleUploadExcel = () => {
+    // API placeholder for uploading Excel file
+    console.log('API: POST /api/products/upload');
+    alert('Upload Excel - API placeholder');
+  };
+
   const handleIntegerInput = (value: string): number => {
     const parsed = parseInt(value, 10);
     return isNaN(parsed) || parsed < 0 ? 0 : parsed;
@@ -174,12 +180,25 @@ const Products = () => {
               <FileSpreadsheet className="h-4 w-4" />
               Download Blank Excel Template
             </Button>
-            {canManageProducts && (
-              <Button onClick={() => handleOpenModal()} className="gap-2">
-                <Plus className="h-4 w-4" />
-                Add Product
-              </Button>
-            )}
+            <Button 
+              variant="outline" 
+              className="gap-2" 
+              onClick={handleUploadExcel}
+              disabled={!canManageProducts}
+              title={!canManageProducts ? 'No permission' : ''}
+            >
+              <Upload className="h-4 w-4" />
+              Upload Excel
+            </Button>
+            <Button 
+              onClick={() => handleOpenModal()} 
+              className="gap-2"
+              disabled={!canManageProducts}
+              title={!canManageProducts ? 'No permission' : ''}
+            >
+              <Plus className="h-4 w-4" />
+              Add Product
+            </Button>
           </div>
         </div>
 
@@ -227,7 +246,7 @@ const Products = () => {
         </Card>
 
         {/* Bulk Actions */}
-        {canBulkDelete && someSelected && (
+        {someSelected && (
           <Card className="mb-4 border-destructive/30 bg-destructive/5">
             <CardContent className="p-4 flex items-center justify-between">
               <span className="text-sm font-medium">
@@ -238,6 +257,8 @@ const Products = () => {
                 size="sm" 
                 onClick={handleBulkDelete}
                 className="gap-2"
+                disabled={!canBulkDelete}
+                title={!canBulkDelete ? 'No permission' : ''}
               >
                 <Trash2 className="h-4 w-4" />
                 Bulk Delete
@@ -253,14 +274,13 @@ const Products = () => {
               <table className="data-table">
                 <thead>
                   <tr>
-                    {canBulkDelete && (
-                      <th className="w-12">
-                        <Checkbox 
-                          checked={allSelected}
-                          onCheckedChange={handleSelectAll}
-                        />
-                      </th>
-                    )}
+                    <th className="w-12">
+                      <Checkbox 
+                        checked={allSelected}
+                        onCheckedChange={handleSelectAll}
+                        disabled={!canBulkDelete}
+                      />
+                    </th>
                     <th>Product Name</th>
                     <th>Brand</th>
                     <th>Category</th>
@@ -270,7 +290,7 @@ const Products = () => {
                     <th>Unit</th>
                     <th className="text-right">Default PO Qty</th>
                     <th className="text-center">Include in PO</th>
-                    {canManageProducts && <th className="text-right">Actions</th>}
+                    <th className="text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -279,14 +299,13 @@ const Products = () => {
                     const isLowStock = product.current_stock <= product.reorder_level;
                     return (
                       <tr key={product.id}>
-                        {canBulkDelete && (
-                          <td>
-                            <Checkbox 
-                              checked={selectedProducts.has(product.id)}
-                              onCheckedChange={(checked) => handleSelectProduct(product.id, !!checked)}
-                            />
-                          </td>
-                        )}
+                        <td>
+                          <Checkbox 
+                            checked={selectedProducts.has(product.id)}
+                            onCheckedChange={(checked) => handleSelectProduct(product.id, !!checked)}
+                            disabled={!canBulkDelete}
+                          />
+                        </td>
                         <td className="font-medium">{product.name}</td>
                         <td>{product.brand}</td>
                         <td>
@@ -313,28 +332,30 @@ const Products = () => {
                             disabled={!canToggleInclude}
                           />
                         </td>
-                        {canManageProducts && (
-                          <td className="text-right">
-                            <div className="flex justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleOpenModal(product)}
-                                className="h-8 w-8"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDelete(product.id)}
-                                className="h-8 w-8 text-destructive hover:text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </td>
-                        )}
+                        <td className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenModal(product)}
+                              className="h-8 w-8"
+                              disabled={!canManageProducts}
+                              title={!canManageProducts ? 'No permission' : 'Edit'}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDelete(product.id)}
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              disabled={!canManageProducts}
+                              title={!canManageProducts ? 'No permission' : 'Delete'}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}

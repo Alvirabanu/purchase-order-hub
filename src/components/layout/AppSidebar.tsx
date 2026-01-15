@@ -56,14 +56,14 @@ export function AppSidebar() {
     navigate('/login');
   };
 
-  // Build nav items based on permissions
+  // All nav items visible for all roles - actions disabled based on permissions
   const navItems = [
-    { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard, show: true },
-    { title: 'Create PO', url: '/create-po', icon: FilePlus, show: hasPermission('create_po') },
-    { title: 'Products', url: '/products', icon: Package, show: true },
-    { title: 'Vendors', url: '/vendors', icon: Building2, show: true },
-    { title: 'PO Register', url: '/po-register', icon: ClipboardList, show: hasPermission('view_po_register') },
-  ].filter(item => item.show);
+    { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard, disabled: false },
+    { title: 'Create PO', url: '/create-po', icon: FilePlus, disabled: !hasPermission('create_po') },
+    { title: 'Products', url: '/products', icon: Package, disabled: false },
+    { title: 'Vendors', url: '/vendors', icon: Building2, disabled: false },
+    { title: 'PO Register', url: '/po-register', icon: ClipboardList, disabled: false },
+  ];
 
   return (
     <Sidebar collapsible="icon">
@@ -102,14 +102,17 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       asChild
                       isActive={isActive}
-                      tooltip={item.title}
+                      tooltip={item.disabled ? `${item.title} (No permission)` : item.title}
                     >
                       <button
-                        onClick={() => navigate(item.url)}
+                        onClick={() => !item.disabled && navigate(item.url)}
+                        disabled={item.disabled}
                         className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg transition-colors ${
-                          isActive
-                            ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                            : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                          item.disabled
+                            ? 'text-sidebar-muted/50 cursor-not-allowed'
+                            : isActive
+                              ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                              : 'text-sidebar-foreground hover:bg-sidebar-accent'
                         }`}
                       >
                         <item.icon className="h-5 w-5 shrink-0" />
