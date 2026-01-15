@@ -20,8 +20,8 @@ const App = () => {
   const [queryClient] = useState(() => new QueryClient());
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
+    <QueryClientProvider client={queryClient} key="query-client">
+      <AuthProvider key="auth-provider">
         <DataStoreProvider>
           <TooltipProvider>
             <Toaster />
