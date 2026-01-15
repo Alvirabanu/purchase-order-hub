@@ -100,9 +100,23 @@ const Login = () => {
               </Button>
             </form>
 
-            <p className="text-center text-xs text-muted-foreground mt-6">
-              Demo: Use any email and password to login
-            </p>
+            <div className="mt-6 pt-4 border-t">
+              <p className="text-xs text-muted-foreground text-center mb-3">Demo accounts (any password):</p>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between px-3 py-2 bg-muted rounded">
+                  <span className="font-medium">Main Admin:</span>
+                  <code>admin@demo.com</code>
+                </div>
+                <div className="flex justify-between px-3 py-2 bg-muted rounded">
+                  <span className="font-medium">PO Creator:</span>
+                  <code>creator@demo.com</code>
+                </div>
+                <div className="flex justify-between px-3 py-2 bg-muted rounded">
+                  <span className="font-medium">Approval Admin:</span>
+                  <code>approver@demo.com</code>
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
