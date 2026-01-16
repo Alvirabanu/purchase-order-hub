@@ -24,6 +24,7 @@ export type Permission =
   | 'add_single_product'
   | 'add_single_vendor'
   | 'add_to_po_queue'
+  | 'edit_po_quantity'
   // Approval Admin permissions
   | 'approve_po'
   | 'reject_po'
@@ -31,6 +32,10 @@ export type Permission =
   | 'download_po'
   | 'bulk_download_po';
 
+// Updated role permissions per requirements:
+// Main Admin: Dashboard, Products, Vendors, Create PO, PO Register, Approvals, Rejected, PO Download
+// PO Creator: Dashboard, Products, Create PO, PO Register, PO Download (hide Vendors management UI but page can exist read-only)
+// Approval Admin: Dashboard, PO Register, Approvals, Rejected, PO Download (hide Products/Vendors/Create PO)
 const rolePermissions: Record<UserRole, Permission[]> = {
   main_admin: [
     'view_dashboard',
@@ -40,6 +45,7 @@ const rolePermissions: Record<UserRole, Permission[]> = {
     'view_po_register',
     'view_approvals',
     'view_rejected',
+    'view_po_download',
     'manage_products',
     'manage_vendors',
     'bulk_upload_products',
@@ -50,18 +56,26 @@ const rolePermissions: Record<UserRole, Permission[]> = {
     'download_vendor_template',
     'create_po',
     'add_to_po_queue',
+    'edit_po_quantity',
     'approve_po',
     'bulk_approve_po',
+    'download_po',
+    'bulk_download_po',
   ],
   po_creator: [
     'view_dashboard',
     'view_products',
+    'view_vendors', // read-only access
     'view_create_po',
     'view_po_register',
+    'view_po_download',
     'create_po',
     'add_single_product',
     'add_single_vendor',
     'add_to_po_queue',
+    'edit_po_quantity',
+    'download_po',
+    'bulk_download_po',
   ],
   approval_admin: [
     'view_dashboard',

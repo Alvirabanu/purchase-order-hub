@@ -20,7 +20,7 @@ import { toast } from '@/hooks/use-toast';
 
 const PODownload = () => {
   const { hasPermission } = useAuth();
-  const { purchaseOrders, getVendorById, getProductById } = useDataStore();
+  const { purchaseOrders, getVendorById, addDownloadLog } = useDataStore();
   
   const canDownload = hasPermission('download_po');
   const canBulkDownload = hasPermission('bulk_download_po');
@@ -47,6 +47,10 @@ const PODownload = () => {
     });
   };
 
+  const formatDateForFile = (dateStr: string) => {
+    return new Date(dateStr).toISOString().split('T')[0];
+  };
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       setSelectedPOs(new Set(filteredPOs.map(po => po.id)));
@@ -70,6 +74,7 @@ const PODownload = () => {
   const handleDownloadSingle = (id: string) => {
     setSingleDownloadId(id);
     setIsBulkDownload(false);
+    setDownloadLocation('');
     setShowLocationDialog(true);
   };
 
@@ -83,6 +88,7 @@ const PODownload = () => {
       return;
     }
     setIsBulkDownload(true);
+    setDownloadLocation('');
     setShowLocationDialog(true);
   };
 
@@ -90,45 +96,61 @@ const PODownload = () => {
     if (!downloadLocation.trim()) {
       toast({
         title: "Location Required",
-        description: "Please enter a download location.",
+        description: "Please enter a download location reference for logging.",
         variant: "destructive",
       });
       return;
     }
 
     const idsToDownload = isBulkDownload ? Array.from(selectedPOs) : [singleDownloadId!];
-    
-    // Log the download
-    console.log('Download log:', {
-      ids: idsToDownload,
-      location: downloadLocation,
-      timestamp: new Date().toISOString(),
+    const posToDownload = purchaseOrders.filter(po => idsToDownload.includes(po.id));
+
+    // Log each download
+    idsToDownload.forEach(id => {
+      addDownloadLog(id, downloadLocation.trim());
     });
 
-    // Generate file names and simulate download
-    const posToDownload = purchaseOrders.filter(po => idsToDownload.includes(po.id));
-    
+    // Generate and download files
     if (posToDownload.length === 1) {
-      // Single file download
       const po = posToDownload[0];
-      const fileName = `PO-${po.po_number}-${formatDate(po.date).replace(/\s/g, '')}.pdf`;
+      const fileName = `PO-${po.po_number}-${formatDateForFile(po.date)}.pdf`;
+      
+      // Create a simple text file as placeholder (in real app, generate PDF)
+      const content = `Purchase Order: ${po.po_number}\nDate: ${formatDate(po.date)}\nVendor: ${po.vendorName || getVendorById(po.vendor_id)?.name || 'Unknown'}\nTotal Items: ${po.total_items}\nStatus: ${po.status}\nDownload Location: ${downloadLocation}`;
+      
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
       toast({
         title: "Download Started",
         description: `Downloading ${fileName}`,
       });
     } else {
-      // ZIP download for multiple files
-      const fileNames = posToDownload.map(po => 
-        `PO-${po.po_number}-${formatDate(po.date).replace(/\s/g, '')}.pdf`
-      );
+      // For multiple files, download individually (in real app, create ZIP)
+      posToDownload.forEach(po => {
+        const fileName = `PO-${po.po_number}-${formatDateForFile(po.date)}.pdf`;
+        const content = `Purchase Order: ${po.po_number}\nDate: ${formatDate(po.date)}\nVendor: ${po.vendorName || getVendorById(po.vendor_id)?.name || 'Unknown'}\nTotal Items: ${po.total_items}\nStatus: ${po.status}\nDownload Location: ${downloadLocation}`;
+        
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      });
+      
       toast({
         title: "Bulk Download Started",
-        description: `Downloading ${posToDownload.length} POs as ZIP file`,
+        description: `Downloading ${posToDownload.length} PO files`,
       });
     }
 
-    // TODO: Implement actual PDF generation and download via Edge Function
-    
     setShowLocationDialog(false);
     setDownloadLocation('');
     setSingleDownloadId(null);
@@ -140,16 +162,17 @@ const PODownload = () => {
   const allSelected = filteredPOs.length > 0 && filteredPOs.every(po => selectedPOs.has(po.id));
   const someSelected = selectedPOs.size > 0;
 
-  if (!canDownload) {
+  // PO Download is visible to all roles (per requirement #7)
+  if (!hasPermission('view_po_download')) {
     return (
       <AppLayout>
         <div className="animate-fade-in">
           <Card>
             <CardContent className="py-16 text-center">
               <Package className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
-              <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+              <h2 className="text-xl font-semibold mb-2">Not Authorized</h2>
               <p className="text-muted-foreground">
-                You don't have permission to download purchase orders.
+                You don't have permission to access PO downloads.
               </p>
             </CardContent>
           </Card>
@@ -247,15 +270,17 @@ const PODownload = () => {
                           {po.approved_at ? formatDate(po.approved_at) : '-'}
                         </td>
                         <td className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDownloadSingle(po.id)}
-                            className="gap-1"
-                          >
-                            <FileDown className="h-4 w-4" />
-                            Download
-                          </Button>
+                          {canDownload && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDownloadSingle(po.id)}
+                              className="gap-1"
+                            >
+                              <FileDown className="h-4 w-4" />
+                              Download
+                            </Button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -284,24 +309,30 @@ const PODownload = () => {
                 {isBulkDownload ? 'Bulk Download POs' : 'Download PO'}
               </DialogTitle>
               <DialogDescription>
-                Enter a location reference for this download. This will be logged for tracking purposes.
+                Enter a download location reference for tracking purposes. Files will download via your browser.
               </DialogDescription>
             </DialogHeader>
             <div className="py-4">
               <div className="space-y-2">
-                <Label htmlFor="location">Download Location</Label>
+                <Label htmlFor="location">Download Location (Reference)</Label>
                 <Input
                   id="location"
                   value={downloadLocation}
                   onChange={(e) => setDownloadLocation(e.target.value)}
-                  placeholder="e.g., Warehouse A, Main Office, Site B"
+                  placeholder="e.g., Laptop > Downloads, Warehouse A"
                 />
+                <p className="text-xs text-muted-foreground">
+                  This is logged for audit purposes. Actual files download to your browser's default location.
+                </p>
               </div>
-              <p className="text-sm text-muted-foreground mt-3">
+              <p className="text-sm text-muted-foreground mt-4">
                 {isBulkDownload 
-                  ? `${selectedPOs.size} PO${selectedPOs.size > 1 ? 's' : ''} will be downloaded as a ZIP file.`
+                  ? `${selectedPOs.size} PO${selectedPOs.size > 1 ? 's' : ''} will be downloaded.`
                   : 'PO will be downloaded as a PDF file.'
                 }
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">
+                File naming: PO-&lt;Number&gt;-&lt;Date&gt;.pdf
               </p>
             </div>
             <DialogFooter>

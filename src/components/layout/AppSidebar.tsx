@@ -66,10 +66,10 @@ export function AppSidebar() {
     navigate('/login');
   };
 
-  // Define nav items with role-based visibility per requirements:
-  // Main Admin: Dashboard, Products, Vendors, Create PO, PO Register, Approvals, Rejected
-  // PO Creator: Dashboard, Products, Create PO, PO Register
-  // Approval Admin: Dashboard, PO Register, Approvals, Rejected
+  // Updated nav items with role-based visibility per requirements:
+  // Main Admin: Dashboard, Products, Vendors, Create PO, PO Register, Approvals, Rejected, PO Download
+  // PO Creator: Dashboard, Products, Create PO, PO Register, PO Download
+  // Approval Admin: Dashboard, PO Register, Approvals, Rejected, PO Download
   const allNavItems: NavItem[] = [
     { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard, visibleFor: ['main_admin', 'po_creator', 'approval_admin'] },
     { title: 'Products', url: '/products', icon: Package, visibleFor: ['main_admin', 'po_creator'] },
@@ -78,7 +78,7 @@ export function AppSidebar() {
     { title: 'PO Register', url: '/po-register', icon: ClipboardList, visibleFor: ['main_admin', 'po_creator', 'approval_admin'] },
     { title: 'Approvals', url: '/approvals', icon: CheckSquare, visibleFor: ['main_admin', 'approval_admin'] },
     { title: 'Rejected', url: '/rejected', icon: XCircle, visibleFor: ['main_admin', 'approval_admin'] },
-    { title: 'PO Download', url: '/po-download', icon: Download, visibleFor: ['approval_admin'] },
+    { title: 'PO Download', url: '/po-download', icon: Download, visibleFor: ['main_admin', 'po_creator', 'approval_admin'] },
   ];
 
   // Filter nav items based on user role
