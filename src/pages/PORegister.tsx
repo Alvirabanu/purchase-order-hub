@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -23,41 +25,64 @@ import {
 import { Label } from '@/components/ui/label';
 import { useDataStore } from '@/contexts/DataStoreContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Search, Eye, Download, ClipboardList, Calendar, CheckCircle, Mail } from 'lucide-react';
+import { Search, Eye, ClipboardList, Calendar, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 const PORegister = () => {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
-  const { purchaseOrders, vendors, getVendorById, approvePurchaseOrder, approvePurchaseOrders } = useDataStore();
+  const { 
+    purchaseOrders, 
+    vendors, 
+    getVendorById, 
+    approvePurchaseOrder, 
+    approvePurchaseOrders,
+    rejectPurchaseOrder 
+  } = useDataStore();
   
   const canApprove = hasPermission('approve_po');
+  const canReject = hasPermission('reject_po');
   const canBulkApprove = hasPermission('bulk_approve_po');
-  const canDownload = hasPermission('download_pdf');
-  const canSendMail = hasPermission('send_mail');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [vendorFilter, setVendorFilter] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selectedPOs, setSelectedPOs] = useState<Set<string>>(new Set());
-  const [showLocationDialog, setShowLocationDialog] = useState(false);
-  const [downloadLocation, setDownloadLocation] = useState('');
+  const [activeTab, setActiveTab] = useState('created');
+  const [isApproving, setIsApproving] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+  
+  // Reject dialog
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectingPOId, setRejectingPOId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
 
-  const filteredPOs = purchaseOrders.filter(po => {
-    const matchesSearch = po.po_number.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesVendor = vendorFilter === 'all' || po.vendor_id === vendorFilter;
-    
-    let matchesDate = true;
-    if (dateFrom) {
-      matchesDate = matchesDate && po.date >= dateFrom;
-    }
-    if (dateTo) {
-      matchesDate = matchesDate && po.date <= dateTo;
-    }
-    
-    return matchesSearch && matchesVendor && matchesDate;
-  });
+  // Filter POs by status
+  const createdPOs = purchaseOrders.filter(po => po.status === 'created');
+  const approvedPOs = purchaseOrders.filter(po => po.status === 'approved');
+  const rejectedPOs = purchaseOrders.filter(po => po.status === 'rejected');
+
+  const getFilteredPOs = (pos: typeof purchaseOrders) => {
+    return pos.filter(po => {
+      const matchesSearch = po.po_number.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesVendor = vendorFilter === 'all' || po.vendor_id === vendorFilter;
+      
+      let matchesDate = true;
+      if (dateFrom) {
+        matchesDate = matchesDate && po.date >= dateFrom;
+      }
+      if (dateTo) {
+        matchesDate = matchesDate && po.date <= dateTo;
+      }
+      
+      return matchesSearch && matchesVendor && matchesDate;
+    });
+  };
+
+  const filteredCreatedPOs = getFilteredPOs(createdPOs);
+  const filteredApprovedPOs = getFilteredPOs(approvedPOs);
+  const filteredRejectedPOs = getFilteredPOs(rejectedPOs);
 
   const getStatusClass = (status: string) => {
     const statusClasses: Record<string, string> = {
@@ -76,9 +101,19 @@ const PORegister = () => {
     });
   };
 
+  const formatDateTime = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedPOs(new Set(filteredPOs.map(po => po.id)));
+      setSelectedPOs(new Set(filteredCreatedPOs.map(po => po.id)));
     } else {
       setSelectedPOs(new Set());
     }
@@ -97,6 +132,7 @@ const PORegister = () => {
   };
 
   const handleApprovePO = async (id: string) => {
+    setIsApproving(true);
     try {
       await approvePurchaseOrder(id);
       toast({
@@ -109,30 +145,28 @@ const PORegister = () => {
         description: error.message || "Failed to approve PO",
         variant: "destructive",
       });
+    } finally {
+      setIsApproving(false);
     }
   };
 
   const handleBulkApprove = async () => {
-    const createdPOIds = Array.from(selectedPOs).filter(id => {
-      const po = purchaseOrders.find(p => p.id === id);
-      return po?.status === 'created';
-    });
-    
-    if (createdPOIds.length === 0) {
+    if (selectedPOs.size === 0) {
       toast({
-        title: "No POs to approve",
-        description: "All selected POs are already approved.",
+        title: "No POs Selected",
+        description: "Please select at least one PO to approve.",
         variant: "destructive",
       });
       return;
     }
     
+    setIsApproving(true);
     try {
-      await approvePurchaseOrders(createdPOIds);
+      await approvePurchaseOrders(Array.from(selectedPOs));
       setSelectedPOs(new Set());
       toast({
         title: "Bulk Approval Complete",
-        description: `${createdPOIds.length} purchase order(s) approved successfully.`,
+        description: `${selectedPOs.size} purchase order(s) approved successfully.`,
       });
     } catch (error: any) {
       toast({
@@ -140,60 +174,168 @@ const PORegister = () => {
         description: error.message || "Failed to approve POs",
         variant: "destructive",
       });
+    } finally {
+      setIsApproving(false);
     }
   };
 
-  const handleDownloadPDF = (id: string) => {
-    console.log(`API: GET /api/po/${id}/pdf`);
-    toast({
-      title: "Download Started",
-      description: "PDF download initiated.",
-    });
+  const openRejectDialog = (id: string) => {
+    setRejectingPOId(id);
+    setRejectionReason('');
+    setShowRejectDialog(true);
   };
 
-  const handleSendMail = (id: string) => {
-    toast({
-      title: "Email Service",
-      description: "Email service not configured yet.",
-    });
+  const handleRejectPO = async () => {
+    if (!rejectingPOId) return;
+    
+    setIsRejecting(true);
+    try {
+      await rejectPurchaseOrder(rejectingPOId, rejectionReason || undefined);
+      toast({
+        title: "PO Rejected",
+        description: "Purchase order has been rejected.",
+      });
+      setShowRejectDialog(false);
+      setRejectingPOId(null);
+      setRejectionReason('');
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reject PO",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRejecting(false);
+    }
   };
 
-  const handleBulkDownload = () => {
-    setShowLocationDialog(true);
-  };
-
-  const confirmBulkDownload = () => {
-    const approvedSelectedPOs = Array.from(selectedPOs).filter(id => {
-      const po = purchaseOrders.find(p => p.id === id);
-      return po?.status === 'approved';
-    });
-    console.log(`API: POST /api/po/bulk-download`, { ids: approvedSelectedPOs, location: downloadLocation });
-    toast({
-      title: "Bulk Download",
-      description: `${approvedSelectedPOs.length} POs downloaded.`,
-    });
-    setShowLocationDialog(false);
-    setDownloadLocation('');
-    setSelectedPOs(new Set());
-  };
-
-  const allSelected = filteredPOs.length > 0 && filteredPOs.every(po => selectedPOs.has(po.id));
+  const allSelected = filteredCreatedPOs.length > 0 && filteredCreatedPOs.every(po => selectedPOs.has(po.id));
   const someSelected = selectedPOs.size > 0;
-  const selectedApprovedCount = Array.from(selectedPOs).filter(id => {
-    const po = purchaseOrders.find(p => p.id === id);
-    return po?.status === 'approved';
-  }).length;
 
-  // Check if user can download a specific PO
-  const canDownloadPO = (po: { status: string; canDownloadPdf?: boolean }) => {
-    if (!canDownload) return false;
-    return po.status === 'approved' && po.canDownloadPdf !== false;
-  };
-
-  // Check if user can send mail for a specific PO
-  const canSendMailPO = (po: { status: string; canSendMail?: boolean }) => {
-    return canSendMail && po.status === 'approved' && po.canSendMail !== false;
-  };
+  const renderPOTable = (pos: typeof purchaseOrders, showActions: boolean = false, showApprovalInfo: boolean = false, showRejectionInfo: boolean = false) => (
+    <div className="overflow-x-auto">
+      {pos.length > 0 ? (
+        <table className="data-table">
+          <thead>
+            <tr>
+              {showActions && canBulkApprove && (
+                <th className="w-12">
+                  <Checkbox 
+                    checked={allSelected}
+                    onCheckedChange={handleSelectAll}
+                  />
+                </th>
+              )}
+              <th>PO Number</th>
+              <th>Vendor Name</th>
+              <th>Date</th>
+              <th className="text-center">Total Items</th>
+              <th>Status</th>
+              {showApprovalInfo && <th>Approved At</th>}
+              {showRejectionInfo && <th>Rejected At</th>}
+              {showRejectionInfo && <th>Reason</th>}
+              <th className="text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pos.map((po) => {
+              const vendor = getVendorById(po.vendor_id);
+              return (
+                <tr key={po.id}>
+                  {showActions && canBulkApprove && (
+                    <td>
+                      <Checkbox 
+                        checked={selectedPOs.has(po.id)}
+                        onCheckedChange={(checked) => handleSelectPO(po.id, !!checked)}
+                      />
+                    </td>
+                  )}
+                  <td>
+                    <span className="font-mono font-medium">{po.po_number}</span>
+                  </td>
+                  <td>{po.vendorName || vendor?.name || '-'}</td>
+                  <td>{formatDate(po.date)}</td>
+                  <td className="text-center">{po.total_items}</td>
+                  <td>
+                    <span className={getStatusClass(po.status)}>
+                      {po.status === 'created' ? 'PO Created' : po.status.charAt(0).toUpperCase() + po.status.slice(1)}
+                    </span>
+                  </td>
+                  {showApprovalInfo && (
+                    <td className="text-muted-foreground text-sm">
+                      {po.approved_at ? formatDateTime(po.approved_at) : '-'}
+                    </td>
+                  )}
+                  {showRejectionInfo && (
+                    <td className="text-muted-foreground text-sm">
+                      {po.rejected_at ? formatDateTime(po.rejected_at) : '-'}
+                    </td>
+                  )}
+                  {showRejectionInfo && (
+                    <td className="text-muted-foreground text-sm max-w-[200px] truncate">
+                      {po.rejection_reason || '-'}
+                    </td>
+                  )}
+                  <td className="text-right">
+                    <div className="flex justify-end gap-1 flex-wrap">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => navigate(`/po/${po.id}`)}
+                        className="gap-1"
+                      >
+                        <Eye className="h-4 w-4" />
+                        <span className="hidden sm:inline">View</span>
+                      </Button>
+                      
+                      {showActions && canApprove && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleApprovePO(po.id)}
+                          disabled={isApproving}
+                          className="gap-1 text-green-600 hover:text-green-600"
+                        >
+                          {isApproving ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <CheckCircle className="h-4 w-4" />
+                          )}
+                          <span className="hidden sm:inline">Approve</span>
+                        </Button>
+                      )}
+                      
+                      {showActions && canReject && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openRejectDialog(po.id)}
+                          className="gap-1 text-destructive hover:text-destructive"
+                        >
+                          <XCircle className="h-4 w-4" />
+                          <span className="hidden sm:inline">Reject</span>
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      ) : (
+        <div className="empty-state py-16">
+          <ClipboardList className="h-12 w-12 text-muted-foreground/50 mb-4" />
+          <h3 className="text-lg font-medium mb-1">No purchase orders found</h3>
+          <p className="text-muted-foreground text-sm">
+            {searchQuery || vendorFilter !== 'all' || dateFrom || dateTo
+              ? 'Try adjusting your filters'
+              : 'Purchase orders will appear here'}
+          </p>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <AppLayout>
@@ -258,188 +400,109 @@ const PORegister = () => {
           </CardContent>
         </Card>
 
-        {/* Bulk Actions */}
-        {someSelected && (canBulkApprove || canDownload) && (
+        {/* Bulk Actions for Created POs */}
+        {activeTab === 'created' && someSelected && canBulkApprove && (
           <Card className="mb-4 border-primary/30 bg-primary/5">
             <CardContent className="p-4 flex flex-wrap items-center justify-between gap-4">
               <span className="text-sm font-medium">
                 {selectedPOs.size} PO{selectedPOs.size > 1 ? 's' : ''} selected
               </span>
-              <div className="flex gap-2 flex-wrap">
-                {canBulkApprove && (
-                  <Button 
-                    variant="default" 
-                    size="sm" 
-                    onClick={handleBulkApprove}
-                    className="gap-2"
-                  >
-                    <CheckCircle className="h-4 w-4" />
-                    Bulk Approve
-                  </Button>
+              <Button 
+                onClick={handleBulkApprove}
+                disabled={isApproving}
+                className="gap-2"
+              >
+                {isApproving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="h-4 w-4" />
                 )}
-                {canDownload && selectedApprovedCount > 0 && (
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={handleBulkDownload}
-                    className="gap-2"
-                  >
-                    <Download className="h-4 w-4" />
-                    Bulk Download ({selectedApprovedCount} approved)
-                  </Button>
-                )}
-              </div>
+                Bulk Approve ({selectedPOs.size})
+              </Button>
             </CardContent>
           </Card>
         )}
 
-        {/* PO Table */}
+        {/* Tabs for PO Status */}
         <Card>
-          <div className="overflow-x-auto">
-            {filteredPOs.length > 0 ? (
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    {(canBulkApprove || canDownload) && (
-                      <th className="w-12">
-                        <Checkbox 
-                          checked={allSelected}
-                          onCheckedChange={handleSelectAll}
-                        />
-                      </th>
-                    )}
-                    <th>PO Number</th>
-                    <th>Vendor Name</th>
-                    <th>Date</th>
-                    <th className="text-center">Total Items</th>
-                    <th>Status</th>
-                    <th className="text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredPOs.map((po) => {
-                    const vendor = getVendorById(po.vendor_id);
-                    return (
-                      <tr key={po.id}>
-                        {(canBulkApprove || canDownload) && (
-                          <td>
-                            <Checkbox 
-                              checked={selectedPOs.has(po.id)}
-                              onCheckedChange={(checked) => handleSelectPO(po.id, !!checked)}
-                            />
-                          </td>
-                        )}
-                        <td>
-                          <span className="font-mono font-medium">{po.po_number}</span>
-                        </td>
-                        <td>{po.vendorName || vendor?.name || '-'}</td>
-                        <td>{formatDate(po.date)}</td>
-                        <td className="text-center">{po.total_items}</td>
-                        <td>
-                          <span className={getStatusClass(po.status)}>
-                            {po.status.charAt(0).toUpperCase() + po.status.slice(1)}
-                          </span>
-                        </td>
-                        <td className="text-right">
-                          <div className="flex justify-end gap-1 flex-wrap">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => navigate(`/po/${po.id}`)}
-                              className="gap-1"
-                            >
-                              <Eye className="h-4 w-4" />
-                              <span className="hidden sm:inline">View</span>
-                            </Button>
-                            
-                            {canApprove && po.status === 'created' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleApprovePO(po.id)}
-                                className="gap-1 text-success hover:text-success"
-                              >
-                                <CheckCircle className="h-4 w-4" />
-                                <span className="hidden sm:inline">Approve</span>
-                              </Button>
-                            )}
-                            
-                            {canDownloadPO(po) && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDownloadPDF(po.id)}
-                                className="gap-1"
-                              >
-                                <Download className="h-4 w-4" />
-                                <span className="hidden sm:inline">PDF</span>
-                              </Button>
-                            )}
-                            
-                            {canSendMailPO(po) && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleSendMail(po.id)}
-                                className="gap-1"
-                              >
-                                <Mail className="h-4 w-4" />
-                                <span className="hidden sm:inline">Send</span>
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            ) : (
-              <div className="empty-state py-16">
-                <ClipboardList className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                <h3 className="text-lg font-medium mb-1">No purchase orders found</h3>
-                <p className="text-muted-foreground text-sm mb-4">
-                  {searchQuery || vendorFilter !== 'all' || dateFrom || dateTo
-                    ? 'Try adjusting your filters'
-                    : 'Get started by creating your first purchase order'}
-                </p>
-                <Button onClick={() => navigate('/create-po')}>
-                  Create Purchase Order
-                </Button>
-              </div>
-            )}
-          </div>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <div className="border-b px-4">
+              <TabsList className="h-12 bg-transparent">
+                <TabsTrigger value="created" className="gap-2">
+                  PO Created
+                  {createdPOs.length > 0 && (
+                    <span className="ml-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium">
+                      {createdPOs.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="approved" className="gap-2">
+                  Approved
+                  {approvedPOs.length > 0 && (
+                    <span className="ml-1 rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-xs font-medium">
+                      {approvedPOs.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="rejected" className="gap-2">
+                  Rejected
+                  {rejectedPOs.length > 0 && (
+                    <span className="ml-1 rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-xs font-medium">
+                      {rejectedPOs.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+            </div>
+            
+            <TabsContent value="created" className="m-0">
+              {renderPOTable(filteredCreatedPOs, true, false, false)}
+            </TabsContent>
+            
+            <TabsContent value="approved" className="m-0">
+              {renderPOTable(filteredApprovedPOs, false, true, false)}
+            </TabsContent>
+            
+            <TabsContent value="rejected" className="m-0">
+              {renderPOTable(filteredRejectedPOs, false, false, true)}
+            </TabsContent>
+          </Tabs>
         </Card>
 
-        {/* Location Selection Dialog for Bulk Download */}
-        <Dialog open={showLocationDialog} onOpenChange={setShowLocationDialog}>
+        {/* Reject Dialog */}
+        <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
           <DialogContent className="sm:max-w-[400px]">
             <DialogHeader>
-              <DialogTitle>Bulk Download POs</DialogTitle>
+              <DialogTitle>Reject Purchase Order</DialogTitle>
               <DialogDescription>
-                Enter or select a location for the downloaded files.
+                Are you sure you want to reject this PO? You can optionally provide a reason.
               </DialogDescription>
             </DialogHeader>
             <div className="py-4">
               <div className="space-y-2">
-                <Label htmlFor="location">Download Location</Label>
-                <Input
-                  id="location"
-                  value={downloadLocation}
-                  onChange={(e) => setDownloadLocation(e.target.value)}
-                  placeholder="e.g., Warehouse A, Main Office"
+                <Label htmlFor="reason">Rejection Reason (Optional)</Label>
+                <Textarea
+                  id="reason"
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="Enter reason for rejection..."
+                  rows={3}
                 />
               </div>
-              <p className="text-sm text-muted-foreground mt-3">
-                {selectedApprovedCount} approved PO{selectedApprovedCount !== 1 ? 's' : ''} will be downloaded.
-              </p>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowLocationDialog(false)}>
+              <Button variant="outline" onClick={() => setShowRejectDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={confirmBulkDownload} disabled={!downloadLocation.trim()}>
-                Download
+              <Button 
+                variant="destructive" 
+                onClick={handleRejectPO}
+                disabled={isRejecting}
+              >
+                {isRejecting ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : null}
+                Reject PO
               </Button>
             </DialogFooter>
           </DialogContent>

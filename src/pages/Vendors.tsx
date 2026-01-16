@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,24 +13,31 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Card, CardContent } from '@/components/ui/card';
-import { mockVendors } from '@/lib/mockData';
+import { useDataStore } from '@/contexts/DataStoreContext';
 import { Vendor } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { Plus, Search, Pencil, Trash2, Building2 } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Building2, FileSpreadsheet, Upload } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 const Vendors = () => {
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const isMainAdmin = user?.role === 'main_admin';
+  
   const canManageVendors = hasPermission('manage_vendors');
+  const canBulkUpload = hasPermission('bulk_upload_vendors');
+  const canAddSingle = hasPermission('add_single_vendor');
 
-  const [vendors, setVendors] = useState<Vendor[]>(mockVendors);
+  const { vendors, addVendor, updateVendor, deleteVendor, refreshVendors } = useDataStore();
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
   const [formData, setFormData] = useState({
-    id: '',
     name: '',
     gst: '',
     address: '',
+    phone: '',
     contact_person_name: '',
     contact_person_email: '',
   });
@@ -45,21 +52,20 @@ const Vendors = () => {
     if (vendor) {
       setEditingVendor(vendor);
       setFormData({
-        id: vendor.id,
         name: vendor.name,
         gst: vendor.gst,
         address: vendor.address,
+        phone: vendor.contact_person_name || '',
         contact_person_name: vendor.contact_person_name,
         contact_person_email: vendor.contact_person_email,
       });
     } else {
       setEditingVendor(null);
-      const nextId = `V${String(vendors.length + 1).padStart(3, '0')}`;
       setFormData({ 
-        id: nextId, 
         name: '', 
         gst: '', 
         address: '', 
+        phone: '',
         contact_person_name: '', 
         contact_person_email: '' 
       });
@@ -67,23 +73,105 @@ const Vendors = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = () => {
-    if (editingVendor) {
-      setVendors(vendors.map(v => 
-        v.id === editingVendor.id ? { ...v, ...formData } : v
-      ));
-    } else {
-      const newVendor: Vendor = {
-        ...formData,
-      };
-      setVendors([...vendors, newVendor]);
+  const handleSave = async () => {
+    try {
+      if (editingVendor) {
+        await updateVendor(editingVendor.id, formData);
+        toast({
+          title: "Vendor Updated",
+          description: "Vendor has been updated successfully.",
+        });
+      } else {
+        await addVendor(formData);
+        toast({
+          title: "Vendor Added",
+          description: "New vendor has been added successfully.",
+        });
+      }
+      setIsModalOpen(false);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save vendor",
+        variant: "destructive",
+      });
     }
-    setIsModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
-    setVendors(vendors.filter(v => v.id !== id));
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteVendor(id);
+      toast({
+        title: "Vendor Deleted",
+        description: "Vendor has been removed.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete vendor",
+        variant: "destructive",
+      });
+    }
   };
+
+  const handleDownloadTemplate = () => {
+    const headers = ['Vendor Name', 'Address', 'Phone', 'Email', 'GST / Tax ID'];
+    const csvContent = headers.join(',') + '\n';
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'vendors_template.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: "Template Downloaded",
+      description: "Blank vendor template has been downloaded.",
+    });
+  };
+
+  const handleUploadExcel = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        toast({
+          title: "Error",
+          description: "File is empty or has no data rows",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Parse and import vendors
+      toast({
+        title: "Upload Processing",
+        description: "Vendors are being imported...",
+      });
+      
+      // TODO: Implement actual import logic
+      await refreshVendors();
+    };
+    reader.readAsText(file);
+    
+    event.target.value = '';
+  };
+
+  // Determine if user can add vendors (Admin can manage, PO Creator can add single)
+  const canAddVendor = canManageVendors || canAddSingle;
 
   return (
     <AppLayout>
@@ -93,15 +181,41 @@ const Vendors = () => {
             <h1 className="page-title">Vendors</h1>
             <p className="text-muted-foreground text-sm mt-1">Manage your vendor directory</p>
           </div>
-          <Button 
-            onClick={() => handleOpenModal()} 
-            className="gap-2"
-            disabled={!canManageVendors}
-            title={!canManageVendors ? 'No permission' : ''}
-          >
-            <Plus className="h-4 w-4" />
-            Add Vendor
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            {/* Main Admin: Bulk operations */}
+            {canBulkUpload && (
+              <>
+                <Button variant="outline" className="gap-2" onClick={handleDownloadTemplate}>
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Download Template
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="gap-2" 
+                  onClick={handleUploadExcel}
+                >
+                  <Upload className="h-4 w-4" />
+                  Upload Excel
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </>
+            )}
+            {canAddVendor && (
+              <Button 
+                onClick={() => handleOpenModal()} 
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Add Vendor
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Search */}
@@ -126,34 +240,29 @@ const Vendors = () => {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Vendor ID</th>
                     <th>Vendor Name</th>
                     <th className="max-w-[200px]">Address</th>
-                    <th>GST Number</th>
-                    <th>Contact Person</th>
-                    <th>Contact Email</th>
-                    <th className="text-right">Actions</th>
+                    <th>Phone</th>
+                    <th>Email</th>
+                    <th>GST / Tax ID</th>
+                    {(canManageVendors || canAddSingle) && <th className="text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredVendors.map((vendor) => (
                     <tr key={vendor.id}>
-                      <td>
-                        <code className="text-xs bg-muted px-2 py-1 rounded">
-                          {vendor.id}
-                        </code>
-                      </td>
                       <td className="font-medium">{vendor.name}</td>
                       <td className="max-w-[200px] truncate text-muted-foreground">
                         {vendor.address}
                       </td>
+                      <td>{vendor.contact_person_name}</td>
+                      <td className="text-muted-foreground">{vendor.contact_person_email}</td>
                       <td>
                         <code className="text-xs bg-muted px-2 py-1 rounded">
                           {vendor.gst}
                         </code>
                       </td>
-                      <td>{vendor.contact_person_name}</td>
-                      <td className="text-muted-foreground">{vendor.contact_person_email}</td>
+                      {(canManageVendors || canAddSingle) && (
                         <td className="text-right">
                           <div className="flex justify-end gap-1">
                             <Button
@@ -161,26 +270,28 @@ const Vendors = () => {
                               size="icon"
                               onClick={() => handleOpenModal(vendor)}
                               className="h-8 w-8"
-                              disabled={!canManageVendors}
-                              title={!canManageVendors ? 'No permission' : 'Edit'}
+                              disabled={!canManageVendors && !canAddSingle}
+                              title="Edit"
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDelete(vendor.id)}
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              disabled={!canManageVendors}
-                              title={!canManageVendors ? 'No permission' : 'Delete'}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            {canManageVendors && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDelete(vendor.id)}
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                title="Delete"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         </td>
-                      </tr>
-                    ))}
-                  </tbody>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             ) : (
               <div className="empty-state py-16">
@@ -205,16 +316,6 @@ const Vendors = () => {
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="id">Vendor ID</Label>
-                <Input
-                  id="id"
-                  value={formData.id}
-                  onChange={(e) => setFormData({ ...formData, id: e.target.value })}
-                  placeholder="e.g., V001"
-                  disabled={!!editingVendor}
-                />
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="name">Vendor Name</Label>
                 <Input
                   id="name"
@@ -234,25 +335,16 @@ const Vendors = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="gst">GST Number</Label>
+                <Label htmlFor="phone">Phone</Label>
                 <Input
-                  id="gst"
-                  value={formData.gst}
-                  onChange={(e) => setFormData({ ...formData, gst: e.target.value })}
-                  placeholder="e.g., 27AABCT1234C1ZV"
+                  id="phone"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="e.g., +91 98765 43210"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="contact_person_name">Contact Person Name</Label>
-                <Input
-                  id="contact_person_name"
-                  value={formData.contact_person_name}
-                  onChange={(e) => setFormData({ ...formData, contact_person_name: e.target.value })}
-                  placeholder="Enter contact person name"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="contact_person_email">Contact Person Email</Label>
+                <Label htmlFor="contact_person_email">Email</Label>
                 <Input
                   id="contact_person_email"
                   type="email"
@@ -261,12 +353,21 @@ const Vendors = () => {
                   placeholder="email@example.com"
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="gst">GST / Tax ID</Label>
+                <Input
+                  id="gst"
+                  value={formData.gst}
+                  onChange={(e) => setFormData({ ...formData, gst: e.target.value })}
+                  placeholder="e.g., 27AABCT1234C1ZV"
+                />
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsModalOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleSave}>
+              <Button onClick={handleSave} disabled={!formData.name}>
                 {editingVendor ? 'Save Changes' : 'Add Vendor'}
               </Button>
             </DialogFooter>

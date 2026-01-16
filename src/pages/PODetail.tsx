@@ -15,8 +15,8 @@ const PODetail = () => {
   const { purchaseOrders, getVendorById, getProductById, approvePurchaseOrder } = useDataStore();
   
   const canApprove = hasPermission('approve_po');
-  const canDownload = hasPermission('download_pdf');
-  const canSendMail = hasPermission('send_mail');
+  const canDownload = hasPermission('download_po');
+  const canSendMail = false; // Email service not configured
 
   const purchaseOrder = purchaseOrders.find(po => po.id === id);
   const vendor = purchaseOrder ? getVendorById(purchaseOrder.vendor_id) : undefined;
