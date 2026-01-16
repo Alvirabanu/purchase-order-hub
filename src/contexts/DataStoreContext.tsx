@@ -52,7 +52,7 @@ interface DataStoreContextType {
   posLoading: boolean;
   refreshPurchaseOrders: () => void;
   addPurchaseOrder: (vendorId: string, items: { productId: string; quantity: number }[]) => Promise<void>;
-  generatePOFromQueue: () => Promise<void>;
+  generatePOFromQueue: (selectedProductIds?: string[]) => Promise<void>;
   approvePurchaseOrder: (id: string) => Promise<void>;
   approvePurchaseOrders: (ids: string[]) => Promise<void>;
   rejectPurchaseOrder: (id: string, reason?: string) => Promise<void>;
@@ -359,14 +359,21 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     saveToStorage(STORAGE_KEYS.PRODUCTS, updatedProducts);
   }, [user, getNextPONumber, vendors, purchaseOrders, products, saveToStorage]);
 
-  const generatePOFromQueue = useCallback(async () => {
+  const generatePOFromQueue = useCallback(async (selectedProductIds?: string[]) => {
     if (!user) throw new Error('Must be logged in to create PO');
     if (poQueue.length === 0) throw new Error('No items in queue');
+
+    // If specific items selected, only process those
+    const itemsToProcess = selectedProductIds 
+      ? poQueue.filter(item => selectedProductIds.includes(item.productId))
+      : poQueue;
+
+    if (itemsToProcess.length === 0) throw new Error('No items selected');
 
     // Group queue items by vendor
     const groupedByVendor: Record<string, { productId: string; quantity: number }[]> = {};
     
-    for (const item of poQueue) {
+    for (const item of itemsToProcess) {
       const product = products.find(p => p.id === item.productId);
       if (product) {
         const vendorId = product.vendor_id;
@@ -385,9 +392,16 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       await addPurchaseOrder(vendorId, items);
     }
 
-    // Clear the queue
-    clearPoQueue();
-  }, [user, poQueue, products, addPurchaseOrder, clearPoQueue]);
+    // Remove only processed items from queue (not all)
+    if (selectedProductIds) {
+      const newQueue = poQueue.filter(item => !selectedProductIds.includes(item.productId));
+      setPoQueue(newQueue);
+      saveToStorage(STORAGE_KEYS.PO_QUEUE, newQueue);
+    } else {
+      // Clear the entire queue if no specific selection
+      clearPoQueue();
+    }
+  }, [user, poQueue, products, addPurchaseOrder, clearPoQueue, saveToStorage]);
 
   const approvePurchaseOrder = useCallback(async (id: string) => {
     if (!user) throw new Error('Must be logged in to approve PO');
