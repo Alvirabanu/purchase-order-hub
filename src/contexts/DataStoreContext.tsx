@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { Product, PurchaseOrder, Vendor, POItem, POStatus } from '@/types';
+import { Product, PurchaseOrder, Vendor, POItem, POStatus, POQueueItem } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 
 // Storage keys
@@ -8,6 +8,7 @@ const STORAGE_KEYS = {
   VENDORS: 'po_manager_vendors',
   PURCHASE_ORDERS: 'po_manager_pos',
   DOWNLOAD_LOGS: 'po_manager_download_logs',
+  PO_QUEUE: 'po_manager_po_queue',
 };
 
 // Extended PO type with additional tracking fields
@@ -40,11 +41,18 @@ interface DataStoreContextType {
   deleteProduct: (id: string) => Promise<void>;
   deleteProducts: (ids: string[]) => Promise<void>;
   
+  // PO Queue
+  poQueue: POQueueItem[];
+  addToPoQueue: (productId: string, quantity: number) => void;
+  removeFromPoQueue: (productId: string) => void;
+  clearPoQueue: () => void;
+  
   // Purchase Orders
   purchaseOrders: ExtendedPurchaseOrder[];
   posLoading: boolean;
   refreshPurchaseOrders: () => void;
   addPurchaseOrder: (vendorId: string, items: { productId: string; quantity: number }[]) => Promise<void>;
+  generatePOFromQueue: () => Promise<void>;
   approvePurchaseOrder: (id: string) => Promise<void>;
   approvePurchaseOrders: (ids: string[]) => Promise<void>;
   rejectPurchaseOrder: (id: string, reason?: string) => Promise<void>;
@@ -56,6 +64,7 @@ interface DataStoreContextType {
   addVendor: (vendor: Omit<Vendor, 'id'>) => Promise<void>;
   updateVendor: (id: string, updates: Partial<Vendor>) => Promise<void>;
   deleteVendor: (id: string) => Promise<void>;
+  deleteVendors: (ids: string[]) => Promise<void>;
   
   // Lookup helpers
   getVendorById: (id: string) => Vendor | undefined;
@@ -77,6 +86,7 @@ const initialVendors: Vendor[] = [
     name: 'Tech Components Ltd',
     gst: '27AABCT1234C1ZV',
     address: '123 Industrial Area, Mumbai, MH 400001',
+    phone: '+91 98765 43210',
     contact_person_name: 'Rahul Sharma',
     contact_person_email: 'rahul@techcomponents.com'
   },
@@ -85,6 +95,7 @@ const initialVendors: Vendor[] = [
     name: 'Global Electronics Inc',
     gst: '29AADCG5678D1ZP',
     address: '456 Tech Park, Bangalore, KA 560001',
+    phone: '+91 98765 12345',
     contact_person_name: 'Priya Patel',
     contact_person_email: 'priya@globalelectronics.com'
   },
@@ -100,8 +111,9 @@ const initialProducts: Product[] = [
     current_stock: 150,
     reorder_level: 50,
     unit: 'pcs',
-    default_po_quantity: 1,
-    include_in_create_po: true
+    po_quantity: 1,
+    include_in_create_po: true,
+    added_to_po_queue: false
   },
   {
     id: '2',
@@ -112,8 +124,9 @@ const initialProducts: Product[] = [
     current_stock: 25,
     reorder_level: 30,
     unit: 'pcs',
-    default_po_quantity: 1,
-    include_in_create_po: true
+    po_quantity: 1,
+    include_in_create_po: true,
+    added_to_po_queue: false
   },
 ];
 
@@ -125,6 +138,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
   const [posLoading, setPosLoading] = useState(true);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorsLoading, setVendorsLoading] = useState(true);
+  const [poQueue, setPoQueue] = useState<POQueueItem[]>([]);
 
   // Load data from localStorage
   const loadFromStorage = useCallback(<T,>(key: string, defaultValue: T): T => {
@@ -153,11 +167,13 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     const storedVendors = loadFromStorage<Vendor[]>(STORAGE_KEYS.VENDORS, []);
     const storedProducts = loadFromStorage<Product[]>(STORAGE_KEYS.PRODUCTS, []);
     const storedPOs = loadFromStorage<ExtendedPurchaseOrder[]>(STORAGE_KEYS.PURCHASE_ORDERS, []);
+    const storedQueue = loadFromStorage<POQueueItem[]>(STORAGE_KEYS.PO_QUEUE, []);
 
     // Use stored data or initialize with defaults
     setVendors(storedVendors.length > 0 ? storedVendors : initialVendors);
     setProducts(storedProducts.length > 0 ? storedProducts : initialProducts);
     setPurchaseOrders(storedPOs);
+    setPoQueue(storedQueue);
 
     // Save initial data if empty
     if (storedVendors.length === 0) {
@@ -193,6 +209,9 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     const newProduct: Product = {
       ...product,
       id: 'P' + Date.now(),
+      po_quantity: product.po_quantity || 1,
+      include_in_create_po: product.include_in_create_po ?? true,
+      added_to_po_queue: product.added_to_po_queue ?? false,
     };
     const updated = [...products, newProduct];
     setProducts(updated);
@@ -217,6 +236,43 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     saveToStorage(STORAGE_KEYS.PRODUCTS, updated);
   }, [products, saveToStorage]);
 
+  // PO Queue operations
+  const addToPoQueue = useCallback((productId: string, quantity: number) => {
+    // Add to queue
+    const newQueue = [...poQueue, { productId, quantity, addedAt: new Date().toISOString() }];
+    setPoQueue(newQueue);
+    saveToStorage(STORAGE_KEYS.PO_QUEUE, newQueue);
+    
+    // Mark product as added to queue and remove from products list for PO Creator
+    const updatedProducts = products.map(p => 
+      p.id === productId 
+        ? { ...p, added_to_po_queue: true, include_in_create_po: false, po_quantity: quantity } 
+        : p
+    );
+    setProducts(updatedProducts);
+    saveToStorage(STORAGE_KEYS.PRODUCTS, updatedProducts);
+  }, [poQueue, products, saveToStorage]);
+
+  const removeFromPoQueue = useCallback((productId: string) => {
+    const newQueue = poQueue.filter(item => item.productId !== productId);
+    setPoQueue(newQueue);
+    saveToStorage(STORAGE_KEYS.PO_QUEUE, newQueue);
+    
+    // Restore product to available list
+    const updatedProducts = products.map(p => 
+      p.id === productId 
+        ? { ...p, added_to_po_queue: false, include_in_create_po: true } 
+        : p
+    );
+    setProducts(updatedProducts);
+    saveToStorage(STORAGE_KEYS.PRODUCTS, updatedProducts);
+  }, [poQueue, products, saveToStorage]);
+
+  const clearPoQueue = useCallback(() => {
+    setPoQueue([]);
+    saveToStorage(STORAGE_KEYS.PO_QUEUE, []);
+  }, [saveToStorage]);
+
   // Vendor operations
   const addVendor = useCallback(async (vendor: Omit<Vendor, 'id'>) => {
     const newVendor: Vendor = {
@@ -236,6 +292,12 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
 
   const deleteVendor = useCallback(async (id: string) => {
     const updated = vendors.filter(v => v.id !== id);
+    setVendors(updated);
+    saveToStorage(STORAGE_KEYS.VENDORS, updated);
+  }, [vendors, saveToStorage]);
+
+  const deleteVendors = useCallback(async (ids: string[]) => {
+    const updated = vendors.filter(v => !ids.includes(v.id));
     setVendors(updated);
     saveToStorage(STORAGE_KEYS.VENDORS, updated);
   }, [vendors, saveToStorage]);
@@ -289,13 +351,43 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     // Mark products as no longer available for PO (include_in_create_po = false)
     const updatedProducts = products.map(p => {
       if (items.some(item => item.productId === p.id)) {
-        return { ...p, include_in_create_po: false };
+        return { ...p, include_in_create_po: false, added_to_po_queue: false };
       }
       return p;
     });
     setProducts(updatedProducts);
     saveToStorage(STORAGE_KEYS.PRODUCTS, updatedProducts);
   }, [user, getNextPONumber, vendors, purchaseOrders, products, saveToStorage]);
+
+  const generatePOFromQueue = useCallback(async () => {
+    if (!user) throw new Error('Must be logged in to create PO');
+    if (poQueue.length === 0) throw new Error('No items in queue');
+
+    // Group queue items by vendor
+    const groupedByVendor: Record<string, { productId: string; quantity: number }[]> = {};
+    
+    for (const item of poQueue) {
+      const product = products.find(p => p.id === item.productId);
+      if (product) {
+        const vendorId = product.vendor_id;
+        if (!groupedByVendor[vendorId]) {
+          groupedByVendor[vendorId] = [];
+        }
+        groupedByVendor[vendorId].push({
+          productId: item.productId,
+          quantity: item.quantity,
+        });
+      }
+    }
+
+    // Create PO for each vendor
+    for (const [vendorId, items] of Object.entries(groupedByVendor)) {
+      await addPurchaseOrder(vendorId, items);
+    }
+
+    // Clear the queue
+    clearPoQueue();
+  }, [user, poQueue, products, addPurchaseOrder, clearPoQueue]);
 
   const approvePurchaseOrder = useCallback(async (id: string) => {
     if (!user) throw new Error('Must be logged in to approve PO');
@@ -383,10 +475,15 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       addProduct,
       deleteProduct,
       deleteProducts,
+      poQueue,
+      addToPoQueue,
+      removeFromPoQueue,
+      clearPoQueue,
       purchaseOrders,
       posLoading,
       refreshPurchaseOrders,
       addPurchaseOrder,
+      generatePOFromQueue,
       approvePurchaseOrder,
       approvePurchaseOrders,
       rejectPurchaseOrder,
@@ -396,6 +493,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       addVendor,
       updateVendor,
       deleteVendor,
+      deleteVendors,
       getVendorById,
       getProductById,
       getNextPONumber,

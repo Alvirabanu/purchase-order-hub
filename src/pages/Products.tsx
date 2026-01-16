@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +33,7 @@ import { Plus, Search, Pencil, Trash2, Package, AlertCircle, FileSpreadsheet, Up
 import { toast } from '@/hooks/use-toast';
 
 const Products = () => {
+  const navigate = useNavigate();
   const { user, hasPermission } = useAuth();
   const isMainAdmin = user?.role === 'main_admin';
   const isPOCreator = user?.role === 'po_creator';
@@ -39,7 +41,7 @@ const Products = () => {
   const canManageProducts = hasPermission('manage_products');
   const canBulkUpload = hasPermission('bulk_upload_products');
   const canBulkDelete = hasPermission('bulk_delete_products');
-  const canCreatePO = hasPermission('create_po');
+  const canAddToQueue = hasPermission('add_to_po_queue');
   const canAddSingle = hasPermission('add_single_product');
 
   const { 
@@ -50,8 +52,7 @@ const Products = () => {
     deleteProduct, 
     deleteProducts, 
     getVendorById,
-    addPurchaseOrder,
-    refreshProducts,
+    addToPoQueue,
   } = useDataStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -61,10 +62,11 @@ const Products = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
-  const [poQuantities, setPOQuantities] = useState<Record<string, number>>({});
-  const [isCreatingPO, setIsCreatingPO] = useState(false);
+  const [isAddingToQueue, setIsAddingToQueue] = useState<string | null>(null);
   const [missingVendors, setMissingVendors] = useState<string[]>([]);
   const [showMissingVendorsDialog, setShowMissingVendorsDialog] = useState(false);
+  const [showVendorWarning, setShowVendorWarning] = useState(false);
+  const [pendingVendorName, setPendingVendorName] = useState('');
   
   const [formData, setFormData] = useState({
     name: '',
@@ -74,13 +76,15 @@ const Products = () => {
     current_stock: 0,
     reorder_level: 0,
     unit: 'pcs' as 'pcs' | 'boxes',
+    po_quantity: 1,
   });
 
   const categories = [...new Set(products.map(p => p.category))];
 
-  // For PO Creator: Get products that haven't had a PO created yet (include_in_create_po = true)
+  // For PO Creator: Get products that haven't been added to queue yet
+  // For Admin: Show all products
   const availableProducts = isPOCreator 
-    ? products.filter(p => p.include_in_create_po)
+    ? products.filter(p => p.include_in_create_po && !p.added_to_po_queue)
     : products;
 
   const filteredProducts = availableProducts.filter(product => {
@@ -102,6 +106,7 @@ const Products = () => {
         current_stock: product.current_stock,
         reorder_level: product.reorder_level,
         unit: product.unit,
+        po_quantity: product.po_quantity || 1,
       });
     } else {
       setEditingProduct(null);
@@ -113,12 +118,21 @@ const Products = () => {
         current_stock: 0, 
         reorder_level: 0,
         unit: 'pcs',
+        po_quantity: 1,
       });
     }
     setIsModalOpen(true);
   };
 
   const handleSave = async () => {
+    // Check if vendor exists
+    const vendorExists = vendors.some(v => v.id === formData.vendor_id);
+    if (!vendorExists && formData.vendor_id) {
+      setPendingVendorName(formData.vendor_id);
+      setShowVendorWarning(true);
+      return;
+    }
+
     try {
       if (editingProduct) {
         await updateProduct(editingProduct.id, formData);
@@ -129,8 +143,8 @@ const Products = () => {
       } else {
         await addProduct({
           ...formData,
-          default_po_quantity: 1,
           include_in_create_po: true,
+          added_to_po_queue: false,
         });
         toast({
           title: "Product Added",
@@ -206,13 +220,44 @@ const Products = () => {
     });
   };
 
-  const handlePOQuantityChange = (id: string, value: number) => {
-    setPOQuantities(prev => ({ ...prev, [id]: value }));
+  const handlePOQuantityChange = async (id: string, value: number) => {
+    await updateProduct(id, { po_quantity: value });
+  };
+
+  const handleAddToQueue = async (product: Product) => {
+    const quantity = product.po_quantity || 1;
+    
+    if (quantity < 1) {
+      toast({
+        title: "Validation Error",
+        description: "PO Quantity must be at least 1",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsAddingToQueue(product.id);
+    try {
+      addToPoQueue(product.id, quantity);
+      
+      toast({
+        title: "Added to PO Queue",
+        description: `${product.name} added to Create PO queue`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add to queue",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAddingToQueue(null);
+    }
   };
 
   const handleDownloadTemplate = () => {
-    // Template matches Admin Products Master fields (NO PO Quantity)
-    const headers = ['Product', 'Brand', 'Category', 'Vendor', 'Current Stock', 'Re-order Level', 'Unit'];
+    // Template matches Admin Products Master fields
+    const headers = ['Product Name', 'Brand', 'Category', 'Supplier/Vendor', 'Current Stock', 'Reorder Level', 'Unit', 'PO Quantity'];
     const csvContent = headers.join(',') + '\n';
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -255,12 +300,12 @@ const Products = () => {
       }
 
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const vendorIndex = headers.findIndex(h => h.includes('vendor'));
+      const vendorIndex = headers.findIndex(h => h.includes('vendor') || h.includes('supplier'));
       
       if (vendorIndex === -1) {
         toast({
           title: "Error",
-          description: "Vendor column not found in file",
+          description: "Vendor/Supplier column not found in file",
           variant: "destructive",
         });
         return;
@@ -300,8 +345,8 @@ const Products = () => {
   };
 
   const handleDownloadMissingVendorTemplate = () => {
-    const headers = ['Vendor Name', 'Address', 'Phone', 'Email', 'GST / Tax ID'];
-    const rows = missingVendors.map(v => `${v},,,,`);
+    const headers = ['Vendor ID', 'Vendor Name', 'Address', 'GST Number', 'Contact Person Name', 'Contact Person Email'];
+    const rows = missingVendors.map(v => `,${v},,,,`);
     const csvContent = headers.join(',') + '\n' + rows.join('\n');
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -320,43 +365,10 @@ const Products = () => {
     });
   };
 
-  const handleCreatePOForProduct = async (product: Product) => {
-    const quantity = poQuantities[product.id] || 1;
-    
-    if (quantity < 1) {
-      toast({
-        title: "Validation Error",
-        description: "PO Quantity must be at least 1",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsCreatingPO(true);
-    try {
-      await addPurchaseOrder(product.vendor_id, [{ productId: product.id, quantity }]);
-      await refreshProducts();
-      
-      // Clear quantity
-      setPOQuantities(prev => {
-        const newQuantities = { ...prev };
-        delete newQuantities[product.id];
-        return newQuantities;
-      });
-      
-      toast({
-        title: "PO Created",
-        description: `Purchase order created for ${product.name}`,
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create PO",
-        variant: "destructive",
-      });
-    } finally {
-      setIsCreatingPO(false);
-    }
+  const handleGoToVendors = () => {
+    setShowVendorWarning(false);
+    setIsModalOpen(false);
+    navigate('/vendors', { state: { prefillVendorName: pendingVendorName } });
   };
 
   const handleIntegerInput = (value: string): number => {
@@ -370,6 +382,25 @@ const Products = () => {
   // Determine if user can add products (Admin can manage, PO Creator can add single)
   const canAddProduct = canManageProducts || canAddSingle;
 
+  // Check authorization
+  if (!hasPermission('view_products')) {
+    return (
+      <AppLayout>
+        <div className="animate-fade-in">
+          <Card>
+            <CardContent className="py-16 text-center">
+              <Package className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+              <h2 className="text-xl font-semibold mb-2">Not Authorized</h2>
+              <p className="text-muted-foreground">
+                You don't have permission to view products.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
       <div className="animate-fade-in">
@@ -377,7 +408,7 @@ const Products = () => {
           <div>
             <h1 className="page-title">Products</h1>
             <p className="text-muted-foreground text-sm mt-1">
-              {isMainAdmin ? 'Manage your product catalog' : 'View products and create purchase orders'}
+              {isMainAdmin ? 'Manage your product catalog' : 'View products and add to PO queue'}
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -496,21 +527,15 @@ const Products = () => {
                         />
                       </th>
                     )}
-                    <th>Product</th>
-                    {!isPOCreator && <th>Brand</th>}
-                    {!isPOCreator && <th>Category</th>}
-                    <th>Vendor</th>
+                    <th>Product Name</th>
+                    <th>Brand</th>
+                    <th>Category</th>
+                    <th>Supplier/Vendor</th>
                     <th className="text-right">Current Stock</th>
-                    <th className="text-right">Re-order Level</th>
-                    {isMainAdmin && <th>Unit</th>}
-                    {/* PO Creator sees PO Quantity input and Create PO button */}
-                    {isPOCreator && (
-                      <>
-                        <th>Unit</th>
-                        <th className="text-right w-28">PO Quantity</th>
-                        <th className="text-center">Action</th>
-                      </>
-                    )}
+                    <th className="text-right">Reorder Level</th>
+                    <th>Unit</th>
+                    <th className="text-right w-28">PO Quantity</th>
+                    {canAddToQueue && <th className="text-center">Add to PO</th>}
                     {canManageProducts && <th className="text-right">Actions</th>}
                   </tr>
                 </thead>
@@ -518,7 +543,6 @@ const Products = () => {
                   {filteredProducts.map((product) => {
                     const vendor = getVendorById(product.vendor_id);
                     const isLowStock = product.current_stock <= product.reorder_level;
-                    const currentQty = poQuantities[product.id] ?? 1;
                     
                     return (
                       <tr key={product.id}>
@@ -530,25 +554,13 @@ const Products = () => {
                             />
                           </td>
                         )}
+                        <td className="font-medium">{product.name}</td>
+                        <td>{product.brand}</td>
                         <td>
-                          <div>
-                            <span className="font-medium">{product.name}</span>
-                            {/* PO Creator sees brand + category below product name */}
-                            {isPOCreator && (
-                              <div className="text-xs text-muted-foreground mt-0.5">
-                                {product.brand} • {product.category}
-                              </div>
-                            )}
-                          </div>
+                          <span className="inline-flex items-center rounded-md bg-secondary px-2 py-1 text-xs font-medium">
+                            {product.category}
+                          </span>
                         </td>
-                        {!isPOCreator && <td>{product.brand}</td>}
-                        {!isPOCreator && (
-                          <td>
-                            <span className="inline-flex items-center rounded-md bg-secondary px-2 py-1 text-xs font-medium">
-                              {product.category}
-                            </span>
-                          </td>
-                        )}
                         <td>{vendor?.name || '-'}</td>
                         <td className="text-right">
                           <span className={`font-medium ${isLowStock ? 'text-destructive' : ''}`}>
@@ -559,37 +571,37 @@ const Products = () => {
                           )}
                         </td>
                         <td className="text-right">{product.reorder_level}</td>
-                        {(isMainAdmin || isPOCreator) && <td>{product.unit}</td>}
+                        <td>{product.unit}</td>
+                        <td className="text-right">
+                          <Input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={product.po_quantity || 1}
+                            onChange={(e) => handlePOQuantityChange(product.id, handleIntegerInput(e.target.value))}
+                            className="w-20 text-right h-8"
+                            disabled={!canManageProducts && !canAddSingle}
+                          />
+                        </td>
                         
-                        {/* PO Creator: PO Quantity input + Create PO button */}
-                        {isPOCreator && (
-                          <>
-                            <td className="text-right">
-                              <Input
-                                type="number"
-                                min="1"
-                                step="1"
-                                value={currentQty}
-                                onChange={(e) => handlePOQuantityChange(product.id, handleIntegerInput(e.target.value))}
-                                className="w-20 text-right h-8"
-                              />
-                            </td>
-                            <td className="text-center">
-                              <Button
-                                size="sm"
-                                onClick={() => handleCreatePOForProduct(product)}
-                                disabled={isCreatingPO || currentQty < 1}
-                                className="gap-1"
-                              >
-                                {isCreatingPO ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <ShoppingCart className="h-4 w-4" />
-                                )}
-                                Create PO
-                              </Button>
-                            </td>
-                          </>
+                        {/* Add to PO button */}
+                        {canAddToQueue && (
+                          <td className="text-center">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleAddToQueue(product)}
+                              disabled={isAddingToQueue === product.id || (product.po_quantity || 1) < 1}
+                              className="gap-1"
+                            >
+                              {isAddingToQueue === product.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <ShoppingCart className="h-4 w-4" />
+                              )}
+                              Add
+                            </Button>
+                          </td>
                         )}
                         
                         {/* Main Admin: Edit/Delete actions */}
@@ -632,7 +644,7 @@ const Products = () => {
                   {searchQuery || vendorFilter !== 'all' || categoryFilter !== 'all'
                     ? 'Try adjusting your filters'
                     : isPOCreator 
-                      ? 'All products have POs created. Wait for admin to add new products.'
+                      ? 'All products have been added to PO queue. Wait for admin to add new products.'
                       : 'Get started by adding your first product'}
                 </p>
               </div>
@@ -678,7 +690,7 @@ const Products = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="vendor">Vendor</Label>
+                <Label htmlFor="vendor">Supplier/Vendor</Label>
                 <Select
                   value={formData.vendor_id}
                   onValueChange={(value) => setFormData({ ...formData, vendor_id: value })}
@@ -708,7 +720,7 @@ const Products = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="reorder_level">Re-order Level</Label>
+                  <Label htmlFor="reorder_level">Reorder Level</Label>
                   <Input
                     id="reorder_level"
                     type="number"
@@ -719,20 +731,33 @@ const Products = () => {
                   />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="unit">Unit</Label>
-                <Select
-                  value={formData.unit}
-                  onValueChange={(value: 'pcs' | 'boxes') => setFormData({ ...formData, unit: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pcs">pcs</SelectItem>
-                    <SelectItem value="boxes">boxes</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="unit">Unit</Label>
+                  <Select
+                    value={formData.unit}
+                    onValueChange={(value: 'pcs' | 'boxes') => setFormData({ ...formData, unit: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pcs">pcs</SelectItem>
+                      <SelectItem value="boxes">boxes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="po_quantity">PO Quantity</Label>
+                  <Input
+                    id="po_quantity"
+                    type="number"
+                    value={formData.po_quantity}
+                    onChange={(e) => setFormData({ ...formData, po_quantity: handleIntegerInput(e.target.value) })}
+                    min="1"
+                    step="1"
+                  />
+                </div>
               </div>
             </div>
             <DialogFooter>
@@ -784,6 +809,38 @@ const Products = () => {
               <Button onClick={handleDownloadMissingVendorTemplate} className="gap-2">
                 <FileSpreadsheet className="h-4 w-4" />
                 Download Vendor Template
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Vendor Warning Dialog */}
+        <Dialog open={showVendorWarning} onOpenChange={setShowVendorWarning}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-warning">
+                <AlertCircle className="h-5 w-5" />
+                Vendor Not Found
+              </DialogTitle>
+              <DialogDescription>
+                The selected vendor does not exist in the system.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Vendor Required</AlertTitle>
+                <AlertDescription>
+                  Please add the vendor first before creating this product.
+                </AlertDescription>
+              </Alert>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowVendorWarning(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleGoToVendors} className="gap-2">
+                Go to Vendors
               </Button>
             </DialogFooter>
           </DialogContent>

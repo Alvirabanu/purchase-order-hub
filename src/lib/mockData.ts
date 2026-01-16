@@ -6,6 +6,7 @@ export const mockVendors: Vendor[] = [
     name: 'Tech Components Ltd',
     gst: '27AABCT1234C1ZV',
     address: '123 Industrial Area, Mumbai, MH 400001',
+    phone: '+91 98765 43210',
     contact_person_name: 'Rahul Sharma',
     contact_person_email: 'rahul@techcomponents.com'
   },
@@ -14,6 +15,7 @@ export const mockVendors: Vendor[] = [
     name: 'Global Electronics Inc',
     gst: '29AADCG5678D1ZP',
     address: '456 Tech Park, Bangalore, KA 560001',
+    phone: '+91 98765 12345',
     contact_person_name: 'Priya Patel',
     contact_person_email: 'priya@globalelectronics.com'
   },
@@ -22,6 +24,7 @@ export const mockVendors: Vendor[] = [
     name: 'Prime Materials Co',
     gst: '33AABCP9012E1ZQ',
     address: '789 Commerce Street, Chennai, TN 600001',
+    phone: '+91 98765 67890',
     contact_person_name: 'Suresh Kumar',
     contact_person_email: 'suresh@primematerials.com'
   },
@@ -30,6 +33,7 @@ export const mockVendors: Vendor[] = [
     name: 'Industrial Supplies Hub',
     gst: '24AADCI3456F1ZR',
     address: '321 Factory Road, Ahmedabad, GJ 380001',
+    phone: '+91 98765 11111',
     contact_person_name: 'Amit Singh',
     contact_person_email: 'amit@industrialsupplies.com'
   }
@@ -45,8 +49,9 @@ export const mockProducts: Product[] = [
     current_stock: 150,
     reorder_level: 50,
     unit: 'pcs',
-    default_po_quantity: 100,
-    include_in_create_po: true
+    po_quantity: 100,
+    include_in_create_po: true,
+    added_to_po_queue: false
   },
   {
     id: '2',
@@ -57,8 +62,9 @@ export const mockProducts: Product[] = [
     current_stock: 25,
     reorder_level: 30,
     unit: 'pcs',
-    default_po_quantity: 50,
-    include_in_create_po: true
+    po_quantity: 50,
+    include_in_create_po: true,
+    added_to_po_queue: false
   },
   {
     id: '3',
@@ -69,8 +75,9 @@ export const mockProducts: Product[] = [
     current_stock: 80,
     reorder_level: 40,
     unit: 'pcs',
-    default_po_quantity: 30,
-    include_in_create_po: true
+    po_quantity: 30,
+    include_in_create_po: true,
+    added_to_po_queue: false
   },
   {
     id: '4',
@@ -81,8 +88,9 @@ export const mockProducts: Product[] = [
     current_stock: 200,
     reorder_level: 100,
     unit: 'pcs',
-    default_po_quantity: 150,
-    include_in_create_po: true
+    po_quantity: 150,
+    include_in_create_po: true,
+    added_to_po_queue: false
   },
   {
     id: '5',
@@ -93,8 +101,9 @@ export const mockProducts: Product[] = [
     current_stock: 300,
     reorder_level: 150,
     unit: 'boxes',
-    default_po_quantity: 100,
-    include_in_create_po: false
+    po_quantity: 100,
+    include_in_create_po: false,
+    added_to_po_queue: false
   },
   {
     id: '6',
@@ -105,8 +114,9 @@ export const mockProducts: Product[] = [
     current_stock: 8,
     reorder_level: 10,
     unit: 'pcs',
-    default_po_quantity: 5,
-    include_in_create_po: true
+    po_quantity: 5,
+    include_in_create_po: true,
+    added_to_po_queue: false
   }
 ];
 

@@ -9,9 +9,12 @@ import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import Products from "@/pages/Products";
 import Vendors from "@/pages/Vendors";
+import CreatePO from "@/pages/CreatePO";
 import PORegister from "@/pages/PORegister";
 import PODownload from "@/pages/PODownload";
 import PODetail from "@/pages/PODetail";
+import Approvals from "@/pages/Approvals";
+import Rejected from "@/pages/Rejected";
 import NotFound from "@/pages/NotFound";
 import { useState } from "react";
 
@@ -53,8 +56,11 @@ const AppContent = () => {
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/products" element={<ProtectedRoute><Products /></ProtectedRoute>} />
         <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
+        <Route path="/create-po" element={<ProtectedRoute><CreatePO /></ProtectedRoute>} />
         <Route path="/po-register" element={<ProtectedRoute><PORegister /></ProtectedRoute>} />
         <Route path="/po-download" element={<ProtectedRoute><PODownload /></ProtectedRoute>} />
+        <Route path="/approvals" element={<ProtectedRoute><Approvals /></ProtectedRoute>} />
+        <Route path="/rejected" element={<ProtectedRoute><Rejected /></ProtectedRoute>} />
         <Route path="/po/:id" element={<ProtectedRoute><PODetail /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </Routes>

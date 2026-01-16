@@ -7,18 +7,23 @@ export type Permission =
   | 'view_vendors'
   | 'view_po_register'
   | 'view_po_download'
+  | 'view_create_po'
+  | 'view_approvals'
+  | 'view_rejected'
   // Main Admin permissions (master data only)
   | 'manage_products'
   | 'manage_vendors'
   | 'bulk_upload_products'
   | 'bulk_upload_vendors'
   | 'bulk_delete_products'
+  | 'bulk_delete_vendors'
   | 'download_product_template'
   | 'download_vendor_template'
   // PO Creator permissions
   | 'create_po'
   | 'add_single_product'
   | 'add_single_vendor'
+  | 'add_to_po_queue'
   // Approval Admin permissions
   | 'approve_po'
   | 'reject_po'
@@ -31,27 +36,38 @@ const rolePermissions: Record<UserRole, Permission[]> = {
     'view_dashboard',
     'view_products',
     'view_vendors',
+    'view_create_po',
     'view_po_register',
+    'view_approvals',
+    'view_rejected',
     'manage_products',
     'manage_vendors',
     'bulk_upload_products',
     'bulk_upload_vendors',
     'bulk_delete_products',
+    'bulk_delete_vendors',
     'download_product_template',
     'download_vendor_template',
+    'create_po',
+    'add_to_po_queue',
+    'approve_po',
+    'bulk_approve_po',
   ],
   po_creator: [
     'view_dashboard',
     'view_products',
-    'view_vendors',
+    'view_create_po',
     'view_po_register',
     'create_po',
     'add_single_product',
     'add_single_vendor',
+    'add_to_po_queue',
   ],
   approval_admin: [
     'view_dashboard',
     'view_po_register',
+    'view_approvals',
+    'view_rejected',
     'view_po_download',
     'approve_po',
     'reject_po',
@@ -64,7 +80,7 @@ const rolePermissions: Record<UserRole, Permission[]> = {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (name: string, role: UserRole) => void;
+  login: (name: string, role: UserRole, password?: string) => void;
   logout: () => void;
   isAuthenticated: boolean;
   hasPermission: (permission: Permission) => boolean;
@@ -107,7 +123,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  const login = useCallback((name: string, role: UserRole) => {
+  const login = useCallback((name: string, role: UserRole, password?: string) => {
+    // Password is optional and not validated for local mock auth
     const newUser: User = {
       id: 'local-user-' + Date.now(),
       email: '',

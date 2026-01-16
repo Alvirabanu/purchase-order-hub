@@ -20,6 +20,7 @@ const Login = () => {
   const { login, isAuthenticated, isLoading } = useAuth();
   
   const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole | ''>('');
   const [error, setError] = useState('');
 
@@ -44,7 +45,8 @@ const Login = () => {
       return;
     }
 
-    login(name.trim(), role);
+    // Password is optional for mock auth
+    login(name.trim(), role, password);
     navigate('/dashboard');
   };
 
@@ -95,7 +97,7 @@ const Login = () => {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="name">Your Name</Label>
+              <Label htmlFor="name">Name / Username</Label>
               <Input
                 id="name"
                 type="text"
@@ -103,6 +105,17 @@ const Login = () => {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoFocus
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password (Optional)</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Enter password (optional)"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
               />
             </div>
 
@@ -127,7 +140,7 @@ const Login = () => {
 
             <Button type="submit" className="w-full gap-2">
               <LogIn className="h-4 w-4" />
-              Sign In
+              Login
             </Button>
           </form>
 

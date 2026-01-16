@@ -1,9 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -20,19 +22,22 @@ import { Plus, Search, Pencil, Trash2, Building2, FileSpreadsheet, Upload } from
 import { toast } from '@/hooks/use-toast';
 
 const Vendors = () => {
+  const location = useLocation();
   const { user, hasPermission } = useAuth();
   const isMainAdmin = user?.role === 'main_admin';
   
   const canManageVendors = hasPermission('manage_vendors');
   const canBulkUpload = hasPermission('bulk_upload_vendors');
+  const canBulkDelete = hasPermission('bulk_delete_vendors');
   const canAddSingle = hasPermission('add_single_vendor');
 
-  const { vendors, addVendor, updateVendor, deleteVendor, refreshVendors } = useDataStore();
+  const { vendors, addVendor, updateVendor, deleteVendor, deleteVendors, refreshVendors } = useDataStore();
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
+  const [selectedVendors, setSelectedVendors] = useState<Set<string>>(new Set());
   const [formData, setFormData] = useState({
     name: '',
     gst: '',
@@ -41,6 +46,17 @@ const Vendors = () => {
     contact_person_name: '',
     contact_person_email: '',
   });
+
+  // Handle prefill from navigation state
+  useEffect(() => {
+    const state = location.state as { prefillVendorName?: string } | null;
+    if (state?.prefillVendorName) {
+      setFormData(prev => ({ ...prev, name: state.prefillVendorName }));
+      setIsModalOpen(true);
+      // Clear state after use
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   const filteredVendors = vendors.filter(vendor =>
     vendor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -55,7 +71,7 @@ const Vendors = () => {
         name: vendor.name,
         gst: vendor.gst,
         address: vendor.address,
-        phone: vendor.contact_person_name || '',
+        phone: vendor.phone || '',
         contact_person_name: vendor.contact_person_name,
         contact_person_email: vendor.contact_person_email,
       });
@@ -101,6 +117,11 @@ const Vendors = () => {
   const handleDelete = async (id: string) => {
     try {
       await deleteVendor(id);
+      setSelectedVendors(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
       toast({
         title: "Vendor Deleted",
         description: "Vendor has been removed.",
@@ -114,15 +135,53 @@ const Vendors = () => {
     }
   };
 
+  const handleBulkDelete = async () => {
+    try {
+      await deleteVendors(Array.from(selectedVendors));
+      const count = selectedVendors.size;
+      setSelectedVendors(new Set());
+      toast({
+        title: "Vendors Deleted",
+        description: `${count} vendor(s) have been removed.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete vendors",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedVendors(new Set(filteredVendors.map(v => v.id)));
+    } else {
+      setSelectedVendors(new Set());
+    }
+  };
+
+  const handleSelectVendor = (id: string, checked: boolean) => {
+    setSelectedVendors(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(id);
+      } else {
+        newSet.delete(id);
+      }
+      return newSet;
+    });
+  };
+
   const handleDownloadTemplate = () => {
-    const headers = ['Vendor Name', 'Address', 'Phone', 'Email', 'GST / Tax ID'];
+    const headers = ['Vendor ID', 'Vendor Name', 'Address', 'GST Number', 'Contact Person Name', 'Contact Person Email'];
     const csvContent = headers.join(',') + '\n';
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', 'vendors_template.csv');
+    link.setAttribute('download', 'vendor_master_template.csv');
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -173,6 +232,28 @@ const Vendors = () => {
   // Determine if user can add vendors (Admin can manage, PO Creator can add single)
   const canAddVendor = canManageVendors || canAddSingle;
 
+  const allSelected = filteredVendors.length > 0 && filteredVendors.every(v => selectedVendors.has(v.id));
+  const someSelected = selectedVendors.size > 0;
+
+  // Check authorization
+  if (!hasPermission('view_vendors')) {
+    return (
+      <AppLayout>
+        <div className="animate-fade-in">
+          <Card>
+            <CardContent className="py-16 text-center">
+              <Building2 className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+              <h2 className="text-xl font-semibold mb-2">Not Authorized</h2>
+              <p className="text-muted-foreground">
+                You don't have permission to view vendors.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
       <div className="animate-fade-in">
@@ -187,7 +268,7 @@ const Vendors = () => {
               <>
                 <Button variant="outline" className="gap-2" onClick={handleDownloadTemplate}>
                   <FileSpreadsheet className="h-4 w-4" />
-                  Download Template
+                  Download Vendor Master Template
                 </Button>
                 <Button 
                   variant="outline" 
@@ -233,6 +314,26 @@ const Vendors = () => {
           </CardContent>
         </Card>
 
+        {/* Bulk Actions - Only for Main Admin */}
+        {someSelected && canBulkDelete && (
+          <Card className="mb-4 border-destructive/30 bg-destructive/5">
+            <CardContent className="p-4 flex items-center justify-between">
+              <span className="text-sm font-medium">
+                {selectedVendors.size} vendor{selectedVendors.size > 1 ? 's' : ''} selected
+              </span>
+              <Button 
+                variant="destructive" 
+                size="sm" 
+                onClick={handleBulkDelete}
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Selected
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Vendors Table */}
         <Card>
           <div className="overflow-x-auto">
@@ -240,28 +341,50 @@ const Vendors = () => {
               <table className="data-table">
                 <thead>
                   <tr>
+                    {canBulkDelete && (
+                      <th className="w-12">
+                        <Checkbox 
+                          checked={allSelected}
+                          onCheckedChange={handleSelectAll}
+                        />
+                      </th>
+                    )}
+                    <th>Vendor ID</th>
                     <th>Vendor Name</th>
                     <th className="max-w-[200px]">Address</th>
-                    <th>Phone</th>
-                    <th>Email</th>
-                    <th>GST / Tax ID</th>
+                    <th>GST Number</th>
+                    <th>Contact Person Name</th>
+                    <th>Contact Person Email</th>
                     {(canManageVendors || canAddSingle) && <th className="text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredVendors.map((vendor) => (
                     <tr key={vendor.id}>
+                      {canBulkDelete && (
+                        <td>
+                          <Checkbox 
+                            checked={selectedVendors.has(vendor.id)}
+                            onCheckedChange={(checked) => handleSelectVendor(vendor.id, !!checked)}
+                          />
+                        </td>
+                      )}
+                      <td>
+                        <code className="text-xs bg-muted px-2 py-1 rounded">
+                          {vendor.id}
+                        </code>
+                      </td>
                       <td className="font-medium">{vendor.name}</td>
                       <td className="max-w-[200px] truncate text-muted-foreground">
                         {vendor.address}
                       </td>
-                      <td>{vendor.contact_person_name}</td>
-                      <td className="text-muted-foreground">{vendor.contact_person_email}</td>
                       <td>
                         <code className="text-xs bg-muted px-2 py-1 rounded">
                           {vendor.gst}
                         </code>
                       </td>
+                      <td>{vendor.contact_person_name}</td>
+                      <td className="text-muted-foreground">{vendor.contact_person_email}</td>
                       {(canManageVendors || canAddSingle) && (
                         <td className="text-right">
                           <div className="flex justify-end gap-1">
@@ -335,31 +458,31 @@ const Vendors = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="phone">Phone</Label>
+                <Label htmlFor="gst">GST Number</Label>
                 <Input
-                  id="phone"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="e.g., +91 98765 43210"
+                  id="gst"
+                  value={formData.gst}
+                  onChange={(e) => setFormData({ ...formData, gst: e.target.value })}
+                  placeholder="e.g., 27AABCT1234C1ZV"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="contact_person_email">Email</Label>
+                <Label htmlFor="contact_person_name">Contact Person Name</Label>
+                <Input
+                  id="contact_person_name"
+                  value={formData.contact_person_name}
+                  onChange={(e) => setFormData({ ...formData, contact_person_name: e.target.value })}
+                  placeholder="Contact person's full name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contact_person_email">Contact Person Email</Label>
                 <Input
                   id="contact_person_email"
                   type="email"
                   value={formData.contact_person_email}
                   onChange={(e) => setFormData({ ...formData, contact_person_email: e.target.value })}
                   placeholder="email@example.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="gst">GST / Tax ID</Label>
-                <Input
-                  id="gst"
-                  value={formData.gst}
-                  onChange={(e) => setFormData({ ...formData, gst: e.target.value })}
-                  placeholder="e.g., 27AABCT1234C1ZV"
                 />
               </div>
             </div>
