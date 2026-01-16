@@ -1,5 +1,4 @@
 // API Placeholders - to be wired to real endpoints later
-ghj;
 // Base URL would be configured via environment variable
 
 const API_BASE = "/api";
