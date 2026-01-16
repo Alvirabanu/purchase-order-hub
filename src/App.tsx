@@ -3,18 +3,36 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { DataStoreProvider } from "@/contexts/DataStoreContext";
-import { useAuth } from "@/contexts/AuthContext";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import Products from "@/pages/Products";
 import Vendors from "@/pages/Vendors";
-import CreatePO from "@/pages/CreatePO";
 import PORegister from "@/pages/PORegister";
+import PODownload from "@/pages/PODownload";
 import PODetail from "@/pages/PODetail";
-import Approvals from "@/pages/Approvals";
 import NotFound from "@/pages/NotFound";
 import { useState } from "react";
+
+// Protected route wrapper
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <p className="text-foreground text-lg">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+};
 
 const AppContent = () => {
   const { isLoading } = useAuth();
@@ -32,14 +50,12 @@ const AppContent = () => {
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/products" element={<Products />} />
-        <Route path="/vendors" element={<Vendors />} />
-        <Route path="/create-po" element={<CreatePO />} />
-        <Route path="/po-register" element={<PORegister />} />
-        <Route path="/po/:id" element={<PODetail />} />
-        <Route path="/approvals" element={<Approvals />} />
-        {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/products" element={<ProtectedRoute><Products /></ProtectedRoute>} />
+        <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
+        <Route path="/po-register" element={<ProtectedRoute><PORegister /></ProtectedRoute>} />
+        <Route path="/po-download" element={<ProtectedRoute><PODownload /></ProtectedRoute>} />
+        <Route path="/po/:id" element={<ProtectedRoute><PODetail /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
@@ -51,13 +67,15 @@ const App = () => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <DataStoreProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <AppContent />
-        </TooltipProvider>
-      </DataStoreProvider>
+      <AuthProvider>
+        <DataStoreProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <AppContent />
+          </TooltipProvider>
+        </DataStoreProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 };

@@ -5,18 +5,22 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { useDataStore } from '@/contexts/DataStoreContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { ArrowLeft, Download, FileText, Building2, Mail, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Download, FileText, Building2, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { useState } from 'react';
 
 const PODetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
-  const { purchaseOrders, getVendorById, getProductById, approvePurchaseOrder } = useDataStore();
+  const { purchaseOrders, getVendorById, getProductById, approvePurchaseOrder, rejectPurchaseOrder } = useDataStore();
   
   const canApprove = hasPermission('approve_po');
+  const canReject = hasPermission('reject_po');
   const canDownload = hasPermission('download_po');
-  const canSendMail = false; // Email service not configured
+
+  const [isApproving, setIsApproving] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
 
   const purchaseOrder = purchaseOrders.find(po => po.id === id);
   const vendor = purchaseOrder ? getVendorById(purchaseOrder.vendor_id) : undefined;
@@ -30,11 +34,10 @@ const PODetail = () => {
               <FileText className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
               <h2 className="text-xl font-semibold mb-2">Purchase Order Not Found</h2>
               <p className="text-muted-foreground mb-4">
-                The requested purchase order could not be found.
+                The purchase order you're looking for doesn't exist.
               </p>
               <Button onClick={() => navigate('/po-register')}>
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Register
+                Back to PO Register
               </Button>
             </CardContent>
           </Card>
@@ -43,40 +46,40 @@ const PODetail = () => {
     );
   }
 
+  const getStatusClass = (status: string) => {
+    const statusClasses: Record<string, string> = {
+      created: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+      approved: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+      rejected: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+    };
+    return statusClasses[status] || '';
+  };
+
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('en-IN', {
       day: '2-digit',
-      month: 'long',
+      month: 'short',
       year: 'numeric'
     });
   };
 
-  const getStatusClass = (status: string) => {
-    const statusClasses: Record<string, string> = {
-      created: 'status-badge status-pending',
-      approved: 'status-badge status-approved',
-      rejected: 'status-badge status-rejected',
-    };
-    return statusClasses[status] || 'status-badge';
-  };
-
-  // Check if user can download this PO
-  const canDownloadPO = () => {
-    if (!canDownload) return false;
-    return purchaseOrder.status === 'approved' && purchaseOrder.canDownloadPdf !== false;
-  };
-
-  // Check if user can send mail for this PO
-  const canSendMailPO = () => {
-    return canSendMail && purchaseOrder.status === 'approved' && purchaseOrder.canSendMail !== false;
+  const formatDateTime = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   const handleApprove = async () => {
+    setIsApproving(true);
     try {
       await approvePurchaseOrder(purchaseOrder.id);
       toast({
         title: "PO Approved",
-        description: `Purchase order ${purchaseOrder.po_number} has been approved.`,
+        description: "Purchase order has been approved successfully.",
       });
     } catch (error: any) {
       toast({
@@ -84,190 +87,256 @@ const PODetail = () => {
         description: error.message || "Failed to approve PO",
         variant: "destructive",
       });
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  const handleReject = async () => {
+    setIsRejecting(true);
+    try {
+      await rejectPurchaseOrder(purchaseOrder.id);
+      toast({
+        title: "PO Rejected",
+        description: "Purchase order has been rejected.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reject PO",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRejecting(false);
     }
   };
 
   const handleDownloadPDF = () => {
-    console.log(`API: GET /api/po/${id}/pdf`);
     toast({
       title: "Download Started",
-      description: "PDF download initiated.",
-    });
-  };
-
-  const handleSendMail = () => {
-    toast({
-      title: "Email Service",
-      description: "Email service not configured yet.",
+      description: `Downloading ${purchaseOrder.po_number}.pdf`,
     });
   };
 
   return (
     <AppLayout>
-      <div className="animate-fade-in max-w-4xl mx-auto">
-        {/* Header Actions */}
-        <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-          <Button variant="ghost" onClick={() => navigate('/po-register')} className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Register
+      <div className="animate-fade-in">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-6">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/po-register')}
+          >
+            <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div className="flex gap-2 flex-wrap">
-            {canApprove && purchaseOrder.status === 'created' && (
-              <Button onClick={handleApprove} className="gap-2">
-                <CheckCircle className="h-4 w-4" />
-                Approve PO
-              </Button>
-            )}
-            {canDownloadPO() && (
-              <Button variant="outline" onClick={handleDownloadPDF} className="gap-2">
-                <Download className="h-4 w-4" />
-                Download PDF
-              </Button>
-            )}
-            {canSendMailPO() && (
-              <Button variant="outline" onClick={handleSendMail} className="gap-2">
-                <Mail className="h-4 w-4" />
-                Send to Vendor
-              </Button>
-            )}
+          <div className="flex-1">
+            <h1 className="text-2xl font-bold">{purchaseOrder.po_number}</h1>
+            <p className="text-muted-foreground text-sm">Purchase Order Details</p>
           </div>
+          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusClass(purchaseOrder.status)}`}>
+            {purchaseOrder.status === 'created' ? 'PO Created' : purchaseOrder.status.charAt(0).toUpperCase() + purchaseOrder.status.slice(1)}
+          </span>
         </div>
 
-        {/* PO Document */}
-        <Card className="shadow-lg">
-          <CardContent className="p-8">
-            {/* Company Header */}
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-8">
-              <div className="flex items-center gap-3 mb-4 sm:mb-0">
-                <div className="h-12 w-12 rounded-lg bg-primary flex items-center justify-center">
-                  <Building2 className="h-6 w-6 text-primary-foreground" />
+        <div className="grid gap-6 lg:grid-cols-3">
+          {/* Main Content */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* PO Info */}
+            <Card>
+              <CardContent className="pt-6">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-sm text-muted-foreground">PO Number</p>
+                    <p className="font-mono font-semibold">{purchaseOrder.po_number}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Date</p>
+                    <p className="font-medium">{formatDate(purchaseOrder.date)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Status</p>
+                    <p className="font-medium capitalize">{purchaseOrder.status}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Created By</p>
+                    <p className="font-medium">{purchaseOrder.created_by || '-'}</p>
+                  </div>
                 </div>
-                <div>
-                  <h1 className="text-xl font-bold">Your Company Name</h1>
-                  <p className="text-sm text-muted-foreground">123 Business Street, City 400001</p>
-                </div>
-              </div>
-              <div className="text-left sm:text-right">
-                <h2 className="text-2xl font-bold text-primary">{purchaseOrder.po_number}</h2>
-                <p className="text-sm text-muted-foreground mt-1">Date: {formatDate(purchaseOrder.date)}</p>
-                <span className={`${getStatusClass(purchaseOrder.status)} mt-2 inline-block`}>
-                  {purchaseOrder.status.charAt(0).toUpperCase() + purchaseOrder.status.slice(1)}
-                </span>
-                {purchaseOrder.approved_by && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Approved by: {purchaseOrder.approved_by}
-                  </p>
-                )}
-              </div>
-            </div>
 
-            <Separator className="my-6" />
-
-            {/* Vendor Details */}
-            <div className="mb-8">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                Vendor Details
-              </h3>
-              <Card className="bg-muted/30">
-                <CardContent className="p-4">
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <div>
-                      <p className="font-semibold text-lg">{purchaseOrder.vendorName || vendor?.name || 'Unknown Vendor'}</p>
-                      <p className="text-sm text-muted-foreground mt-1">{vendor?.address || '-'}</p>
-                      <p className="text-sm mt-2">
-                        <span className="text-muted-foreground">Contact: </span>
-                        <span className="font-medium">{vendor?.contact_person_name || '-'}</span>
-                      </p>
-                      <p className="text-sm">
-                        <span className="text-muted-foreground">Email: </span>
-                        <span>{vendor?.contact_person_email || '-'}</span>
-                      </p>
+                {purchaseOrder.status === 'approved' && purchaseOrder.approved_at && (
+                  <>
+                    <Separator className="my-4" />
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Approved By</p>
+                        <p className="font-medium">{purchaseOrder.approved_by || '-'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Approved At</p>
+                        <p className="font-medium">{formatDateTime(purchaseOrder.approved_at)}</p>
+                      </div>
                     </div>
-                    <div className="sm:text-right">
-                      <p className="text-sm">
-                        <span className="text-muted-foreground">Vendor ID: </span>
-                        <code className="bg-background px-2 py-0.5 rounded text-xs">{purchaseOrder.vendor_id}</code>
-                      </p>
-                      {vendor?.gst && (
-                        <p className="text-sm mt-1">
-                          <span className="text-muted-foreground">GST: </span>
-                          <code className="bg-background px-2 py-0.5 rounded text-xs">{vendor.gst}</code>
-                        </p>
-                      )}
+                  </>
+                )}
+
+                {purchaseOrder.status === 'rejected' && purchaseOrder.rejected_at && (
+                  <>
+                    <Separator className="my-4" />
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Rejected By</p>
+                        <p className="font-medium">{purchaseOrder.rejected_by || '-'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Rejected At</p>
+                        <p className="font-medium">{formatDateTime(purchaseOrder.rejected_at)}</p>
+                      </div>
+                    </div>
+                    {purchaseOrder.rejection_reason && (
+                      <div className="mt-4">
+                        <p className="text-sm text-muted-foreground">Reason</p>
+                        <p className="font-medium">{purchaseOrder.rejection_reason}</p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Items */}
+            <Card>
+              <CardContent className="pt-6">
+                <h3 className="font-semibold mb-4">Order Items</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-2 font-medium">Product</th>
+                        <th className="text-right py-2 font-medium">Quantity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {purchaseOrder.items.map((item) => {
+                        const product = getProductById(item.product_id);
+                        return (
+                          <tr key={item.id} className="border-b last:border-0">
+                            <td className="py-3">
+                              <div>
+                                <p className="font-medium">{product?.name || 'Unknown Product'}</p>
+                                {product && (
+                                  <p className="text-sm text-muted-foreground">
+                                    {product.brand} • {product.category}
+                                  </p>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3 text-right">
+                              <span className="font-medium">{item.quantity}</span>
+                              <span className="text-muted-foreground ml-1">{product?.unit || 'pcs'}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Vendor Info */}
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                    <Building2 className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Vendor</p>
+                    <p className="font-semibold">{vendor?.name || purchaseOrder.vendorName || 'Unknown'}</p>
+                  </div>
+                </div>
+                {vendor && (
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Address</p>
+                      <p>{vendor.address}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Contact</p>
+                      <p>{vendor.contact_person_name}</p>
+                      <p>{vendor.contact_person_email}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">GST</p>
+                      <p className="font-mono">{vendor.gst}</p>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                )}
+              </CardContent>
+            </Card>
 
-            {/* Items Table */}
-            <div className="mb-8">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                Order Items
-              </h3>
-              <div className="overflow-x-auto border rounded-lg">
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-muted/50">
-                      <th className="text-left py-3 px-4 text-sm font-semibold">#</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Product</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Brand</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Category</th>
-                      <th className="text-center py-3 px-4 text-sm font-semibold">Unit</th>
-                      <th className="text-right py-3 px-4 text-sm font-semibold">Quantity</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {purchaseOrder.items.map((item, index) => {
-                      const product = getProductById(item.product_id);
-                      return (
-                        <tr key={item.id} className="border-t">
-                          <td className="py-3 px-4 text-sm text-muted-foreground">{index + 1}</td>
-                          <td className="py-3 px-4 font-medium">{product?.name || 'Unknown Product'}</td>
-                          <td className="py-3 px-4 text-muted-foreground">{product?.brand || '-'}</td>
-                          <td className="py-3 px-4 text-muted-foreground">{product?.category || '-'}</td>
-                          <td className="py-3 px-4 text-center text-muted-foreground">{product?.unit || '-'}</td>
-                          <td className="py-3 px-4 text-right font-semibold">{item.quantity}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t bg-muted/30">
-                      <td colSpan={5} className="py-3 px-4 text-sm font-semibold text-right">
-                        Total Items:
-                      </td>
-                      <td className="py-3 px-4 text-right font-bold text-lg">
-                        {purchaseOrder.items.reduce((sum, item) => sum + item.quantity, 0)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
+            {/* Actions */}
+            <Card>
+              <CardContent className="pt-6 space-y-3">
+                <h3 className="font-semibold mb-4">Actions</h3>
+                
+                {purchaseOrder.status === 'created' && canApprove && (
+                  <Button
+                    className="w-full gap-2"
+                    onClick={handleApprove}
+                    disabled={isApproving}
+                  >
+                    {isApproving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle className="h-4 w-4" />
+                    )}
+                    Approve
+                  </Button>
+                )}
 
-            {/* Notes */}
-            <div className="mb-8">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                Notes
-              </h3>
-              <Card className="bg-muted/30">
-                <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground italic">
-                    Please deliver to the main warehouse. Contact purchasing department for any queries.
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
+                {purchaseOrder.status === 'created' && canReject && (
+                  <Button
+                    variant="destructive"
+                    className="w-full gap-2"
+                    onClick={handleReject}
+                    disabled={isRejecting}
+                  >
+                    {isRejecting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <XCircle className="h-4 w-4" />
+                    )}
+                    Reject
+                  </Button>
+                )}
 
-            {/* Footer */}
-            <Separator className="my-6" />
-            <div className="flex flex-col sm:flex-row justify-between items-center text-sm text-muted-foreground">
-              <p>Generated by PO Manager</p>
-              <p>Page 1 of 1</p>
-            </div>
-          </CardContent>
-        </Card>
+                {purchaseOrder.status === 'approved' && canDownload && (
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2"
+                    onClick={handleDownloadPDF}
+                  >
+                    <Download className="h-4 w-4" />
+                    Download PDF
+                  </Button>
+                )}
+
+                <Button
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => navigate('/po-register')}
+                >
+                  Back to Register
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     </AppLayout>
   );

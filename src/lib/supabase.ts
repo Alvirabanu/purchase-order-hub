@@ -1,13 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
+// Supabase has been removed from this project.
+// This file is kept as a placeholder to prevent import errors.
+// All data is now stored locally using localStorage.
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error('Missing Supabase environment variables. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY');
-}
-
-export const supabase = createClient(
-  SUPABASE_URL || '',
-  SUPABASE_ANON_KEY || ''
-);
+export const supabase = null;

@@ -1,234 +1,143 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, FileText, AlertCircle } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useAuth } from '@/contexts/AuthContext';
+import { UserRole } from '@/types';
+import { Package, LogIn } from 'lucide-react';
 
 const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('login');
-  const { login, signUp, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const { login, isAuthenticated, isLoading } = useAuth();
+  
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<UserRole | ''>('');
+  const [error, setError] = useState('');
 
   // Redirect if already authenticated
-  if (isAuthenticated) {
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      navigate('/dashboard');
+    }
+  }, [isLoading, isAuthenticated, navigate]);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!name.trim()) {
+      setError('Please enter your name');
+      return;
+    }
+
+    if (!role) {
+      setError('Please select a role');
+      return;
+    }
+
+    login(name.trim(), role);
     navigate('/dashboard');
-    return null;
+  };
+
+  const getRoleLabel = (r: UserRole) => {
+    const labels: Record<UserRole, string> = {
+      main_admin: 'Main Admin',
+      po_creator: 'PO Creator',
+      approval_admin: 'Approval Admin',
+    };
+    return labels[r];
+  };
+
+  const getRoleDescription = (r: UserRole) => {
+    const descriptions: Record<UserRole, string> = {
+      main_admin: 'Manage products and vendors (master data)',
+      po_creator: 'Create purchase orders',
+      approval_admin: 'Approve/reject POs and download',
+    };
+    return descriptions[r];
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <p className="text-foreground text-lg">Loading...</p>
+      </div>
+    );
   }
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-
-    if (!email.trim() || !password.trim()) {
-      setError('Please enter email and password');
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      await login(email, password);
-      navigate('/dashboard');
-    } catch (err: any) {
-      setError(err.message || 'Login failed. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-
-    if (!email.trim() || !password.trim() || !name.trim()) {
-      setError('Please fill in all fields');
-      return;
-    }
-
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      await signUp(email, password, name);
-      setSuccess('Account created! Please check your email to confirm, then login.');
-      setActiveTab('login');
-    } catch (err: any) {
-      setError(err.message || 'Sign up failed. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="w-full max-w-md animate-fade-in">
-        <div className="flex flex-col items-center mb-8">
-          <div className="h-14 w-14 rounded-xl bg-primary flex items-center justify-center mb-4 shadow-lg">
-            <FileText className="h-7 w-7 text-primary-foreground" />
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4 h-12 w-12 rounded-lg bg-primary flex items-center justify-center">
+            <Package className="h-6 w-6 text-primary-foreground" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground">PO Manager</h1>
-          <p className="text-muted-foreground text-sm mt-1">Purchase Order Management System</p>
-        </div>
+          <CardTitle className="text-2xl">PO Manager</CardTitle>
+          <CardDescription>
+            Sign in to access the Purchase Order Management System
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleLogin} className="space-y-4">
+            {error && (
+              <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
+                {error}
+              </div>
+            )}
 
-        <Card className="shadow-lg border-border/50">
-          <CardHeader className="text-center pb-4">
-            <CardTitle className="text-xl">Welcome</CardTitle>
-            <CardDescription>Sign in or create an account to continue</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-2 mb-4">
-                <TabsTrigger value="login">Sign In</TabsTrigger>
-                <TabsTrigger value="signup">Sign Up</TabsTrigger>
-              </TabsList>
+            <div className="space-y-2">
+              <Label htmlFor="name">Your Name</Label>
+              <Input
+                id="name"
+                type="text"
+                placeholder="Enter your name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoFocus
+              />
+            </div>
 
-              {error && (
-                <Alert variant="destructive" className="animate-fade-in mb-4">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
+            <div className="space-y-2">
+              <Label htmlFor="role">Select Role</Label>
+              <Select value={role} onValueChange={(value: UserRole) => setRole(value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose your role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(['main_admin', 'po_creator', 'approval_admin'] as UserRole[]).map((r) => (
+                    <SelectItem key={r} value={r}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{getRoleLabel(r)}</span>
+                        <span className="text-xs text-muted-foreground">{getRoleDescription(r)}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-              {success && (
-                <Alert className="animate-fade-in mb-4 border-green-500 text-green-700">
-                  <AlertDescription>{success}</AlertDescription>
-                </Alert>
-              )}
+            <Button type="submit" className="w-full gap-2">
+              <LogIn className="h-4 w-4" />
+              Sign In
+            </Button>
+          </form>
 
-              <TabsContent value="login">
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="login-email">Email</Label>
-                    <Input
-                      id="login-email"
-                      type="email"
-                      placeholder="Enter your email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      disabled={isLoading}
-                      className="h-11"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="login-password">Password</Label>
-                    <Input
-                      id="login-password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      disabled={isLoading}
-                      className="h-11"
-                    />
-                  </div>
-
-                  <Button 
-                    type="submit" 
-                    className="w-full h-11 font-medium"
-                    disabled={isLoading}
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Signing in...
-                      </>
-                    ) : (
-                      'Sign in'
-                    )}
-                  </Button>
-                </form>
-              </TabsContent>
-
-              <TabsContent value="signup">
-                <form onSubmit={handleSignUp} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-name">Full Name</Label>
-                    <Input
-                      id="signup-name"
-                      type="text"
-                      placeholder="Enter your name"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      required
-                      disabled={isLoading}
-                      className="h-11"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-email">Email</Label>
-                    <Input
-                      id="signup-email"
-                      type="email"
-                      placeholder="Enter your email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      disabled={isLoading}
-                      className="h-11"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">Password</Label>
-                    <Input
-                      id="signup-password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      disabled={isLoading}
-                      className="h-11"
-                    />
-                    <p className="text-xs text-muted-foreground">Minimum 6 characters</p>
-                  </div>
-
-                  <Button 
-                    type="submit" 
-                    className="w-full h-11 font-medium"
-                    disabled={isLoading}
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Creating account...
-                      </>
-                    ) : (
-                      'Create Account'
-                    )}
-                  </Button>
-
-                  <p className="text-xs text-center text-muted-foreground">
-                    New accounts are created with PO Creator role by default.
-                    Contact an admin to change your role.
-                  </p>
-                </form>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
-      </div>
+          <div className="mt-6 pt-6 border-t">
+            <p className="text-xs text-muted-foreground text-center">
+              This is a local demo. Data is stored in your browser.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };
