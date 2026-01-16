@@ -27,7 +27,10 @@ export interface POItem {
   po_id: string;
   product_id: string;
   quantity: number;
+  product?: Product;
 }
+
+export type POStatus = 'created' | 'approved' | 'rejected';
 
 export interface PurchaseOrder {
   id: string;
@@ -35,8 +38,14 @@ export interface PurchaseOrder {
   vendor_id: string;
   date: string;
   total_items: number;
-  status: 'created' | 'approved';
+  status: POStatus;
   items: POItem[];
+  created_by?: string;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  rejected_by?: string | null;
+  rejected_at?: string | null;
+  rejection_reason?: string | null;
 }
 
 export interface User {
@@ -46,8 +55,22 @@ export interface User {
   role: UserRole;
 }
 
+export interface Profile {
+  id: string;
+  name: string;
+  created_at?: string;
+}
+
 export interface DashboardStats {
   totalProducts: number;
   totalVendors: number;
   posThisMonth: number;
+}
+
+export interface PODownloadLog {
+  id: string;
+  po_id: string;
+  downloaded_by: string;
+  downloaded_at: string;
+  location: string;
 }

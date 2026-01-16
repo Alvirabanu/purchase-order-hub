@@ -11,7 +11,7 @@ import { toast } from '@/hooks/use-toast';
 const PODetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { hasPermission, user } = useAuth();
+  const { hasPermission } = useAuth();
   const { purchaseOrders, getVendorById, getProductById, approvePurchaseOrder } = useDataStore();
   
   const canApprove = hasPermission('approve_po');
@@ -55,6 +55,7 @@ const PODetail = () => {
     const statusClasses: Record<string, string> = {
       created: 'status-badge status-pending',
       approved: 'status-badge status-approved',
+      rejected: 'status-badge status-rejected',
     };
     return statusClasses[status] || 'status-badge';
   };
@@ -70,12 +71,20 @@ const PODetail = () => {
     return canSendMail && purchaseOrder.status === 'approved' && purchaseOrder.canSendMail !== false;
   };
 
-  const handleApprove = () => {
-    approvePurchaseOrder(purchaseOrder.id, user?.name || 'Unknown');
-    toast({
-      title: "PO Approved",
-      description: `Purchase order ${purchaseOrder.po_number} has been approved.`,
-    });
+  const handleApprove = async () => {
+    try {
+      await approvePurchaseOrder(purchaseOrder.id);
+      toast({
+        title: "PO Approved",
+        description: `Purchase order ${purchaseOrder.po_number} has been approved.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to approve PO",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleDownloadPDF = () => {
@@ -87,10 +96,9 @@ const PODetail = () => {
   };
 
   const handleSendMail = () => {
-    console.log(`API: POST /api/po/${id}/send-mail`);
     toast({
-      title: "Email Sent",
-      description: "Email sent to vendor successfully.",
+      title: "Email Service",
+      description: "Email service not configured yet.",
     });
   };
 
@@ -145,9 +153,9 @@ const PODetail = () => {
                 <span className={`${getStatusClass(purchaseOrder.status)} mt-2 inline-block`}>
                   {purchaseOrder.status.charAt(0).toUpperCase() + purchaseOrder.status.slice(1)}
                 </span>
-                {purchaseOrder.approvedBy && (
+                {purchaseOrder.approved_by && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Approved by: {purchaseOrder.approvedBy}
+                    Approved by: {purchaseOrder.approved_by}
                   </p>
                 )}
               </div>

@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useDataStore, ExtendedPurchaseOrder } from '@/contexts/DataStoreContext';
+import { useDataStore } from '@/contexts/DataStoreContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Product } from '@/types';
 import { 
@@ -27,8 +27,10 @@ interface SelectedProduct {
 
 const CreatePO = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const { products, getVendorById, addPurchaseOrders, getNextPONumber } = useDataStore();
+  const { user, hasPermission } = useAuth();
+  const { products, getVendorById, addPurchaseOrder, refreshProducts } = useDataStore();
+  
+  const canCreatePO = hasPermission('create_po');
   
   const [poDate, setPODate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedProducts, setSelectedProducts] = useState<Map<string, SelectedProduct>>(new Map());
@@ -108,7 +110,7 @@ const CreatePO = () => {
   }, [selectedProducts, getVendorById]);
 
   const totalSelectedCount = selectedProducts.size;
-  const canGenerate = totalSelectedCount > 0 && 
+  const canGenerate = canCreatePO && totalSelectedCount > 0 && 
     Array.from(selectedProducts.values()).every(item => item.quantity > 0);
 
   const handleGeneratePO = async () => {
@@ -134,52 +136,37 @@ const CreatePO = () => {
 
     setIsGenerating(true);
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 800));
+    try {
+      // Generate PO for each vendor
+      const poNumbers: string[] = [];
 
-    // Generate PO for each vendor with status "Created"
-    const newPOs: ExtendedPurchaseOrder[] = [];
-    const poNumbers: string[] = [];
-
-    Object.entries(groupedByVendor).forEach(([vendorId, group]) => {
-      const poNumber = getNextPONumber();
-      poNumbers.push(poNumber);
-      
-      const po: ExtendedPurchaseOrder = {
-        id: `po_${Date.now()}_${vendorId}`,
-        po_number: poNumber,
-        vendor_id: vendorId,
-        vendorName: group.vendor?.name || 'Unknown Vendor',
-        date: poDate,
-        total_items: group.items.reduce((sum, item) => sum + item.quantity, 0),
-        status: 'created',
-        createdByRole: user?.role || 'unknown',
-        approvedBy: null,
-        approvedAt: null,
-        canDownloadPdf: false,
-        canSendMail: false,
-        items: group.items.map((item, index) => ({
-          id: `item_${Date.now()}_${index}`,
-          po_id: `po_${Date.now()}_${vendorId}`,
-          product_id: item.product.id,
+      for (const [vendorId, group] of Object.entries(groupedByVendor)) {
+        const items = group.items.map(item => ({
+          productId: item.product.id,
           quantity: item.quantity,
-        })),
-      };
-      
-      newPOs.push(po);
-    });
+        }));
 
-    // Save to shared store
-    addPurchaseOrders(newPOs);
-    
-    setGeneratedPONumbers(poNumbers);
-    setShowSuccess(true);
-    setIsGenerating(false);
+        await addPurchaseOrder(vendorId, items);
+        poNumbers.push(`PO for ${group.vendor?.name || 'Unknown Vendor'}`);
+      }
 
-    toast({
-      title: "Success!",
-      description: `${newPOs.length} Purchase Order${newPOs.length > 1 ? 's' : ''} created successfully.`,
-    });
+      setGeneratedPONumbers(poNumbers);
+      setShowSuccess(true);
+      await refreshProducts();
+
+      toast({
+        title: "Success!",
+        description: `${Object.keys(groupedByVendor).length} Purchase Order${Object.keys(groupedByVendor).length > 1 ? 's' : ''} created successfully.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create purchase order",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const resetForm = () => {
@@ -187,6 +174,24 @@ const CreatePO = () => {
     setGeneratedPONumbers([]);
     setShowSuccess(false);
   };
+
+  if (!canCreatePO) {
+    return (
+      <AppLayout>
+        <div className="animate-fade-in">
+          <Card>
+            <CardContent className="py-16 text-center">
+              <Package className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+              <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+              <p className="text-muted-foreground">
+                You don't have permission to create purchase orders.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
 
   if (showSuccess) {
     return (
@@ -203,8 +208,8 @@ const CreatePO = () => {
               </p>
 
               <div className="space-y-4 mb-8">
-                {generatedPONumbers.map((poNumber) => (
-                  <Card key={poNumber} className="text-left">
+                {generatedPONumbers.map((poNumber, idx) => (
+                  <Card key={idx} className="text-left">
                     <CardContent className="p-4">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
