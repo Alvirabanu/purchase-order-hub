@@ -59,19 +59,19 @@ export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === 'collapsed';
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 
   // Define nav items with role-based visibility
   const allNavItems: NavItem[] = [
     { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard, visibleFor: ['main_admin', 'po_creator', 'approval_admin'] },
-    { title: 'Products', url: '/products', icon: Package, visibleFor: ['main_admin'] },
-    { title: 'Vendors', url: '/vendors', icon: Building2, visibleFor: ['main_admin'] },
-    { title: 'Create PO', url: '/create-po', icon: FilePlus, visibleFor: ['main_admin', 'po_creator'] },
+    { title: 'Products', url: '/products', icon: Package, visibleFor: ['main_admin', 'po_creator'] },
+    { title: 'Vendors', url: '/vendors', icon: Building2, visibleFor: ['main_admin', 'po_creator'] },
+    { title: 'Create PO', url: '/create-po', icon: FilePlus, visibleFor: ['po_creator'] },
     { title: 'PO Register', url: '/po-register', icon: ClipboardList, visibleFor: ['main_admin', 'po_creator', 'approval_admin'] },
-    { title: 'Approvals', url: '/approvals', icon: CheckSquare, visibleFor: ['main_admin', 'approval_admin'] },
+    { title: 'Approvals', url: '/approvals', icon: CheckSquare, visibleFor: ['approval_admin'] },
   ];
 
   // Filter nav items based on user role

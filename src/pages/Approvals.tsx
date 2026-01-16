@@ -11,7 +11,7 @@ import { toast } from '@/hooks/use-toast';
 
 const Approvals = () => {
   const navigate = useNavigate();
-  const { hasPermission, user } = useAuth();
+  const { hasPermission } = useAuth();
   const { purchaseOrders, getVendorById, approvePurchaseOrder, approvePurchaseOrders } = useDataStore();
   
   const canApprove = hasPermission('approve_po');
@@ -25,6 +25,7 @@ const Approvals = () => {
     const statusClasses: Record<string, string> = {
       created: 'status-badge status-pending',
       approved: 'status-badge status-approved',
+      rejected: 'status-badge status-rejected',
     };
     return statusClasses[status] || 'status-badge';
   };
@@ -57,20 +58,28 @@ const Approvals = () => {
     });
   };
 
-  const handleApprovePO = (id: string) => {
-    approvePurchaseOrder(id, user?.name || 'Approval Admin');
-    setSelectedPOs(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(id);
-      return newSet;
-    });
-    toast({
-      title: "PO Approved",
-      description: "Purchase order has been approved successfully.",
-    });
+  const handleApprovePO = async (id: string) => {
+    try {
+      await approvePurchaseOrder(id);
+      setSelectedPOs(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+      toast({
+        title: "PO Approved",
+        description: "Purchase order has been approved successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to approve PO",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleBulkApprove = () => {
+  const handleBulkApprove = async () => {
     if (selectedPOs.size === 0) {
       toast({
         title: "No POs selected",
@@ -80,13 +89,21 @@ const Approvals = () => {
       return;
     }
     
-    approvePurchaseOrders(Array.from(selectedPOs), user?.name || 'Approval Admin');
-    const count = selectedPOs.size;
-    setSelectedPOs(new Set());
-    toast({
-      title: "Bulk Approval Complete",
-      description: `${count} purchase order(s) approved successfully.`,
-    });
+    try {
+      await approvePurchaseOrders(Array.from(selectedPOs));
+      const count = selectedPOs.size;
+      setSelectedPOs(new Set());
+      toast({
+        title: "Bulk Approval Complete",
+        description: `${count} purchase order(s) approved successfully.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to approve POs",
+        variant: "destructive",
+      });
+    }
   };
 
   const allSelected = pendingPOs.length > 0 && pendingPOs.every(po => selectedPOs.has(po.id));

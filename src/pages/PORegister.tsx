@@ -28,7 +28,7 @@ import { toast } from '@/hooks/use-toast';
 
 const PORegister = () => {
   const navigate = useNavigate();
-  const { hasPermission, user } = useAuth();
+  const { hasPermission } = useAuth();
   const { purchaseOrders, vendors, getVendorById, approvePurchaseOrder, approvePurchaseOrders } = useDataStore();
   
   const canApprove = hasPermission('approve_po');
@@ -63,6 +63,7 @@ const PORegister = () => {
     const statusClasses: Record<string, string> = {
       created: 'status-badge status-pending',
       approved: 'status-badge status-approved',
+      rejected: 'status-badge status-rejected',
     };
     return statusClasses[status] || 'status-badge';
   };
@@ -95,15 +96,23 @@ const PORegister = () => {
     });
   };
 
-  const handleApprovePO = (id: string) => {
-    approvePurchaseOrder(id, user?.name || 'Unknown');
-    toast({
-      title: "PO Approved",
-      description: "Purchase order has been approved successfully.",
-    });
+  const handleApprovePO = async (id: string) => {
+    try {
+      await approvePurchaseOrder(id);
+      toast({
+        title: "PO Approved",
+        description: "Purchase order has been approved successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to approve PO",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleBulkApprove = () => {
+  const handleBulkApprove = async () => {
     const createdPOIds = Array.from(selectedPOs).filter(id => {
       const po = purchaseOrders.find(p => p.id === id);
       return po?.status === 'created';
@@ -118,12 +127,20 @@ const PORegister = () => {
       return;
     }
     
-    approvePurchaseOrders(createdPOIds, user?.name || 'Unknown');
-    setSelectedPOs(new Set());
-    toast({
-      title: "Bulk Approval Complete",
-      description: `${createdPOIds.length} purchase order(s) approved successfully.`,
-    });
+    try {
+      await approvePurchaseOrders(createdPOIds);
+      setSelectedPOs(new Set());
+      toast({
+        title: "Bulk Approval Complete",
+        description: `${createdPOIds.length} purchase order(s) approved successfully.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to approve POs",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleDownloadPDF = (id: string) => {
@@ -135,10 +152,9 @@ const PORegister = () => {
   };
 
   const handleSendMail = (id: string) => {
-    console.log(`API: POST /api/po/${id}/send-mail`);
     toast({
-      title: "Email Sent",
-      description: "Email sent to vendor successfully.",
+      title: "Email Service",
+      description: "Email service not configured yet.",
     });
   };
 
