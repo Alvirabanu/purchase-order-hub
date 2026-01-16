@@ -2,13 +2,10 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useDataStore } from '@/contexts/DataStoreContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Product } from '@/types';
 import { 
   Plus, 
   FileText, 
@@ -25,7 +22,6 @@ const CreatePO = () => {
   const navigate = useNavigate();
   const { user, hasPermission } = useAuth();
   const { 
-    products, 
     poQueue, 
     getVendorById, 
     getProductById,
@@ -39,6 +35,7 @@ const CreatePO = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedPONumbers, setGeneratedPONumbers] = useState<string[]>([]);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
   // Get products in the queue with their details
   const queuedProducts = useMemo(() => {
@@ -51,11 +48,16 @@ const CreatePO = () => {
     }).filter(item => item.product);
   }, [poQueue, getProductById]);
 
-  // Group queued products by vendor for summary
+  // Get only selected products for summary
+  const selectedProducts = useMemo(() => {
+    return queuedProducts.filter(item => selectedItems.has(item.productId));
+  }, [queuedProducts, selectedItems]);
+
+  // Group SELECTED products by vendor for summary
   const groupedByVendor = useMemo(() => {
-    const groups: Record<string, { vendor: ReturnType<typeof getVendorById>; items: typeof queuedProducts }> = {};
+    const groups: Record<string, { vendor: ReturnType<typeof getVendorById>; items: typeof selectedProducts }> = {};
     
-    queuedProducts.forEach((item) => {
+    selectedProducts.forEach((item) => {
       if (!item.product) return;
       const vendorId = item.product.vendor_id;
       const vendor = getVendorById(vendorId);
@@ -67,28 +69,55 @@ const CreatePO = () => {
     });
     
     return groups;
-  }, [queuedProducts, getVendorById]);
+  }, [selectedProducts, getVendorById]);
 
   const totalQueuedCount = queuedProducts.length;
-  const canGenerate = canCreatePO && totalQueuedCount > 0 && 
-    queuedProducts.every(item => item.quantity > 0);
+  const selectedCount = selectedItems.size;
+  const allSelected = totalQueuedCount > 0 && selectedCount === totalQueuedCount;
+  
+  const canGenerate = canCreatePO && selectedCount > 0 && 
+    selectedProducts.every(item => item.quantity > 0);
+
+  const handleSelectItem = (productId: string, checked: boolean) => {
+    setSelectedItems(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(productId);
+      } else {
+        newSet.delete(productId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(queuedProducts.map(item => item.productId)));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedItems(new Set());
+  };
 
   const handleGeneratePO = async () => {
-    if (!canGenerate) {
+    if (selectedCount === 0) {
       toast({
-        title: "Validation Error",
-        description: "Please ensure all items have valid quantities.",
+        title: "No Items Selected",
+        description: "Please select at least one item to generate a PO.",
         variant: "destructive",
       });
       return;
     }
 
-    // Validate all quantities are > 0
-    const invalidItems = queuedProducts.filter(item => item.quantity <= 0);
+    // Validate all selected quantities are > 0
+    const invalidItems = selectedProducts.filter(item => item.quantity <= 0);
     if (invalidItems.length > 0) {
       toast({
         title: "Validation Error",
-        description: "All products must have a PO quantity greater than 0.",
+        description: "All selected products must have a PO quantity greater than 0.",
         variant: "destructive",
       });
       return;
@@ -97,7 +126,8 @@ const CreatePO = () => {
     setIsGenerating(true);
 
     try {
-      await generatePOFromQueue();
+      // Generate PO only for selected items
+      await generatePOFromQueue(Array.from(selectedItems));
       
       const poNumbers = Object.entries(groupedByVendor).map(([_, group]) => 
         `PO for ${group.vendor?.name || 'Unknown Vendor'}`
@@ -105,6 +135,7 @@ const CreatePO = () => {
       
       setGeneratedPONumbers(poNumbers);
       setShowSuccess(true);
+      setSelectedItems(new Set());
       await refreshProducts();
 
       toast({
@@ -124,15 +155,21 @@ const CreatePO = () => {
 
   const handleRemoveFromQueue = (productId: string) => {
     removeFromPoQueue(productId);
+    setSelectedItems(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(productId);
+      return newSet;
+    });
     toast({
       title: "Removed",
-      description: "Product removed from PO queue",
+      description: "Product removed from PO queue and returned to Products",
     });
   };
 
   const resetForm = () => {
     setGeneratedPONumbers([]);
     setShowSuccess(false);
+    setSelectedItems(new Set());
   };
 
   if (!canCreatePO) {
@@ -217,7 +254,7 @@ const CreatePO = () => {
         <div className="page-header">
           <div>
             <h1 className="page-title">Create Purchase Order</h1>
-            <p className="text-muted-foreground text-sm mt-1">Review products added to PO queue and generate purchase orders</p>
+            <p className="text-muted-foreground text-sm mt-1">Select products from the queue to generate purchase orders</p>
           </div>
         </div>
 
@@ -227,10 +264,32 @@ const CreatePO = () => {
           <div className="lg:col-span-2">
             <Card>
               <CardHeader className="pb-4">
-                <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                  <Package className="h-5 w-5 text-muted-foreground" />
-                  Products in Queue ({totalQueuedCount})
-                </CardTitle>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                    <Package className="h-5 w-5 text-muted-foreground" />
+                    Products in Queue ({totalQueuedCount})
+                  </CardTitle>
+                  {totalQueuedCount > 0 && (
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={handleSelectAll}
+                      >
+                        {allSelected ? 'Deselect All' : 'Select All'}
+                      </Button>
+                      {selectedCount > 0 && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={handleClearSelection}
+                        >
+                          Clear Selection ({selectedCount})
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -238,6 +297,13 @@ const CreatePO = () => {
                     <table className="data-table">
                       <thead>
                         <tr>
+                          <th className="w-12">
+                            <Checkbox
+                              checked={allSelected}
+                              onCheckedChange={handleSelectAll}
+                              aria-label="Select all"
+                            />
+                          </th>
                           <th>Product</th>
                           <th>Vendor</th>
                           <th className="text-center w-24">Unit</th>
@@ -249,9 +315,17 @@ const CreatePO = () => {
                         {queuedProducts.map((item) => {
                           if (!item.product) return null;
                           const vendor = getVendorById(item.product.vendor_id);
+                          const isSelected = selectedItems.has(item.productId);
                           
                           return (
-                            <tr key={item.productId}>
+                            <tr key={item.productId} className={isSelected ? 'bg-primary/5' : ''}>
+                              <td>
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={(checked) => handleSelectItem(item.productId, !!checked)}
+                                  aria-label={`Select ${item.product.name}`}
+                                />
+                              </td>
                               <td>
                                 <div>
                                   <span className="font-medium">{item.product.name}</span>
@@ -295,7 +369,7 @@ const CreatePO = () => {
             </Card>
           </div>
 
-          {/* Right Panel - Order Summary */}
+          {/* Right Panel - Order Summary (Only Selected Items) */}
           <div className="lg:col-span-1">
             <Card className="sticky top-6">
               <CardHeader className="pb-4">
@@ -305,12 +379,12 @@ const CreatePO = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {totalQueuedCount === 0 ? (
+                {selectedCount === 0 ? (
                   <div className="text-center py-8">
                     <ShoppingCart className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-                    <p className="text-muted-foreground text-sm">No products in queue</p>
+                    <p className="text-muted-foreground text-sm">No items selected</p>
                     <p className="text-muted-foreground text-xs mt-1">
-                      Add products from the Products page
+                      Select products from the queue to add to order
                     </p>
                   </div>
                 ) : (
@@ -345,8 +419,8 @@ const CreatePO = () => {
                     {/* Total */}
                     <div className="border-t pt-4">
                       <div className="flex justify-between items-center text-sm">
-                        <span className="text-muted-foreground">Total Items</span>
-                        <span className="font-semibold">{totalQueuedCount}</span>
+                        <span className="text-muted-foreground">Selected Items</span>
+                        <span className="font-semibold">{selectedCount}</span>
                       </div>
                       <div className="flex justify-between items-center text-sm mt-1">
                         <span className="text-muted-foreground">Vendors</span>
@@ -369,7 +443,7 @@ const CreatePO = () => {
                       ) : (
                         <>
                           <FileText className="h-4 w-4" />
-                          Generate PO
+                          Generate PO ({selectedCount} items)
                         </>
                       )}
                     </Button>
