@@ -232,7 +232,9 @@ const PORegister = () => {
               <th className="text-center">Total Items</th>
               <th>Status</th>
               {showApprovalInfo && <th>Approved At</th>}
+              {showApprovalInfo && <th>Approved By</th>}
               {showRejectionInfo && <th>Rejected At</th>}
+              {showRejectionInfo && <th>Rejected By</th>}
               {showRejectionInfo && <th>Reason</th>}
               <th className="text-right">Actions</th>
             </tr>
@@ -266,9 +268,19 @@ const PORegister = () => {
                       {po.approved_at ? formatDateTime(po.approved_at) : '-'}
                     </td>
                   )}
+                  {showApprovalInfo && (
+                    <td className="text-muted-foreground text-sm">
+                      {po.approved_by || '-'}
+                    </td>
+                  )}
                   {showRejectionInfo && (
                     <td className="text-muted-foreground text-sm">
                       {po.rejected_at ? formatDateTime(po.rejected_at) : '-'}
+                    </td>
+                  )}
+                  {showRejectionInfo && (
+                    <td className="text-muted-foreground text-sm">
+                      {po.rejected_by || '-'}
                     </td>
                   )}
                   {showRejectionInfo && (
@@ -326,11 +338,15 @@ const PORegister = () => {
       ) : (
         <div className="empty-state py-16">
           <ClipboardList className="h-12 w-12 text-muted-foreground/50 mb-4" />
-          <h3 className="text-lg font-medium mb-1">No purchase orders found</h3>
+          <h3 className="text-lg font-medium mb-1">
+            {showRejectionInfo ? 'No rejected POs' : 'No purchase orders found'}
+          </h3>
           <p className="text-muted-foreground text-sm">
-            {searchQuery || vendorFilter !== 'all' || dateFrom || dateTo
-              ? 'Try adjusting your filters'
-              : 'Purchase orders will appear here'}
+            {showRejectionInfo 
+              ? 'All purchase orders have been approved or are pending'
+              : searchQuery || vendorFilter !== 'all' || dateFrom || dateTo
+                ? 'Try adjusting your filters'
+                : 'Purchase orders will appear here'}
           </p>
         </div>
       )}
@@ -498,10 +514,13 @@ const PORegister = () => {
                 variant="destructive" 
                 onClick={handleRejectPO}
                 disabled={isRejecting}
+                className="gap-2"
               >
                 {isRejecting ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : null}
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <XCircle className="h-4 w-4" />
+                )}
                 Reject PO
               </Button>
             </DialogFooter>

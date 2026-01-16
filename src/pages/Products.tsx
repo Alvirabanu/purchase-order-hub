@@ -29,7 +29,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useDataStore } from '@/contexts/DataStoreContext';
 import { Product } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { Plus, Search, Pencil, Trash2, Package, AlertCircle, FileSpreadsheet, Upload, ShoppingCart, Loader2 } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Package, AlertCircle, FileSpreadsheet, Upload, ShoppingCart, Loader2, Download } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 const Products = () => {
@@ -37,12 +37,14 @@ const Products = () => {
   const { user, hasPermission } = useAuth();
   const isMainAdmin = user?.role === 'main_admin';
   const isPOCreator = user?.role === 'po_creator';
+  const isApprovalAdmin = user?.role === 'approval_admin';
   
   const canManageProducts = hasPermission('manage_products');
   const canBulkUpload = hasPermission('bulk_upload_products');
   const canBulkDelete = hasPermission('bulk_delete_products');
   const canAddToQueue = hasPermission('add_to_po_queue');
   const canAddSingle = hasPermission('add_single_product');
+  const canEditPOQuantity = hasPermission('edit_po_quantity');
 
   const { 
     products, 
@@ -83,6 +85,7 @@ const Products = () => {
 
   // For PO Creator: Get products that haven't been added to queue yet
   // For Admin: Show all products
+  // For Approval Admin: Show all products (read-only)
   const availableProducts = isPOCreator 
     ? products.filter(p => p.include_in_create_po && !p.added_to_po_queue)
     : products;
@@ -236,6 +239,15 @@ const Products = () => {
       return;
     }
 
+    // Check if vendor exists
+    const vendorExists = vendors.some(v => v.id === product.vendor_id);
+    if (!vendorExists) {
+      const vendor = getVendorById(product.vendor_id);
+      setPendingVendorName(vendor?.name || product.vendor_id);
+      setShowVendorWarning(true);
+      return;
+    }
+
     setIsAddingToQueue(product.id);
     try {
       addToPoQueue(product.id, quantity);
@@ -256,7 +268,7 @@ const Products = () => {
   };
 
   const handleDownloadTemplate = () => {
-    // Template matches Admin Products Master fields
+    // Template matches Products table columns (blank headers only)
     const headers = ['Product Name', 'Brand', 'Category', 'Supplier/Vendor', 'Current Stock', 'Reorder Level', 'Unit', 'PO Quantity'];
     const csvContent = headers.join(',') + '\n';
     
@@ -301,6 +313,13 @@ const Products = () => {
 
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
       const vendorIndex = headers.findIndex(h => h.includes('vendor') || h.includes('supplier'));
+      const nameIndex = headers.findIndex(h => h.includes('product') && h.includes('name'));
+      const brandIndex = headers.findIndex(h => h.includes('brand'));
+      const categoryIndex = headers.findIndex(h => h.includes('category'));
+      const stockIndex = headers.findIndex(h => h.includes('stock'));
+      const reorderIndex = headers.findIndex(h => h.includes('reorder'));
+      const unitIndex = headers.findIndex(h => h.includes('unit'));
+      const poQtyIndex = headers.findIndex(h => h.includes('po') && h.includes('quantity'));
       
       if (vendorIndex === -1) {
         toast({
@@ -330,12 +349,45 @@ const Products = () => {
         setMissingVendors(missing);
         setShowMissingVendorsDialog(true);
       } else {
-        // Process the upload
+        // Process and import products
+        let importedCount = 0;
+        for (let i = 1; i < lines.length; i++) {
+          const values = lines[i].split(',').map(v => v.trim());
+          const vendorName = values[vendorIndex];
+          const vendor = vendors.find(v => v.name.toLowerCase() === vendorName?.toLowerCase());
+          
+          if (vendor) {
+            const name = nameIndex >= 0 ? values[nameIndex] : '';
+            const brand = brandIndex >= 0 ? values[brandIndex] : '';
+            const category = categoryIndex >= 0 ? values[categoryIndex] : '';
+            const currentStock = stockIndex >= 0 ? parseInt(values[stockIndex]) || 0 : 0;
+            const reorderLevel = reorderIndex >= 0 ? parseInt(values[reorderIndex]) || 0 : 0;
+            let unit = unitIndex >= 0 ? values[unitIndex]?.toLowerCase() : 'pcs';
+            if (unit !== 'pcs' && unit !== 'boxes') unit = 'pcs';
+            const poQuantity = poQtyIndex >= 0 ? parseInt(values[poQtyIndex]) || 1 : 1;
+            
+            if (name) {
+              await addProduct({
+                name,
+                brand,
+                category,
+                vendor_id: vendor.id,
+                current_stock: currentStock,
+                reorder_level: reorderLevel,
+                unit: unit as 'pcs' | 'boxes',
+                po_quantity: poQuantity,
+                include_in_create_po: true,
+                added_to_po_queue: false,
+              });
+              importedCount++;
+            }
+          }
+        }
+        
         toast({
-          title: "Upload Processing",
-          description: "Products are being imported...",
+          title: "Import Complete",
+          description: `${importedCount} product(s) imported successfully.`,
         });
-        // TODO: Implement actual import logic
       }
     };
     reader.readAsText(file);
@@ -382,7 +434,7 @@ const Products = () => {
   // Determine if user can add products (Admin can manage, PO Creator can add single)
   const canAddProduct = canManageProducts || canAddSingle;
 
-  // Check authorization
+  // Check authorization - Approval Admin should see read-only view
   if (!hasPermission('view_products')) {
     return (
       <AppLayout>
@@ -404,11 +456,13 @@ const Products = () => {
   return (
     <AppLayout>
       <div className="animate-fade-in">
-        <div className="page-header">
+        <div className="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="page-title">Products</h1>
             <p className="text-muted-foreground text-sm mt-1">
-              {isMainAdmin ? 'Manage your product catalog' : 'View products and add to PO queue'}
+              {isMainAdmin ? 'Manage your product catalog' : 
+               isPOCreator ? 'View products and add to PO queue' :
+               'View product catalog (read-only)'}
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -416,7 +470,7 @@ const Products = () => {
             {canBulkUpload && (
               <>
                 <Button variant="outline" className="gap-2" onClick={handleDownloadTemplate}>
-                  <FileSpreadsheet className="h-4 w-4" />
+                  <Download className="h-4 w-4" />
                   Download Template
                 </Button>
                 <Button 
@@ -534,7 +588,7 @@ const Products = () => {
                     <th className="text-right">Current Stock</th>
                     <th className="text-right">Reorder Level</th>
                     <th>Unit</th>
-                    <th className="text-right w-28">PO Quantity</th>
+                    {!isApprovalAdmin && <th className="text-right w-28">PO Quantity</th>}
                     {canAddToQueue && <th className="text-center">Add to PO</th>}
                     {canManageProducts && <th className="text-right">Actions</th>}
                   </tr>
@@ -572,17 +626,21 @@ const Products = () => {
                         </td>
                         <td className="text-right">{product.reorder_level}</td>
                         <td>{product.unit}</td>
-                        <td className="text-right">
-                          <Input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={product.po_quantity || 1}
-                            onChange={(e) => handlePOQuantityChange(product.id, handleIntegerInput(e.target.value))}
-                            className="w-20 text-right h-8"
-                            disabled={!canManageProducts && !canAddSingle}
-                          />
-                        </td>
+                        
+                        {/* PO Quantity - editable for Admin and PO Creator */}
+                        {!isApprovalAdmin && (
+                          <td className="text-right">
+                            <Input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={product.po_quantity || 1}
+                              onChange={(e) => handlePOQuantityChange(product.id, handleIntegerInput(e.target.value))}
+                              className="w-20 text-right h-8"
+                              disabled={!canEditPOQuantity}
+                            />
+                          </td>
+                        )}
                         
                         {/* Add to PO button */}
                         {canAddToQueue && (
@@ -802,9 +860,12 @@ const Products = () => {
                 </ul>
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button variant="outline" onClick={() => setShowMissingVendorsDialog(false)}>
                 Cancel
+              </Button>
+              <Button variant="outline" onClick={() => { setShowMissingVendorsDialog(false); navigate('/vendors'); }} className="gap-2">
+                Go to Vendors
               </Button>
               <Button onClick={handleDownloadMissingVendorTemplate} className="gap-2">
                 <FileSpreadsheet className="h-4 w-4" />
@@ -823,7 +884,7 @@ const Products = () => {
                 Vendor Not Found
               </DialogTitle>
               <DialogDescription>
-                The selected vendor does not exist in the system.
+                The vendor does not exist in the system. Please add the vendor first.
               </DialogDescription>
             </DialogHeader>
             <div className="py-4">
@@ -831,7 +892,7 @@ const Products = () => {
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>Vendor Required</AlertTitle>
                 <AlertDescription>
-                  Please add the vendor first before creating this product.
+                  Please add the vendor first before adding this product to PO.
                 </AlertDescription>
               </Alert>
             </div>

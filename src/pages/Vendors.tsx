@@ -18,7 +18,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useDataStore } from '@/contexts/DataStoreContext';
 import { Vendor } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { Plus, Search, Pencil, Trash2, Building2, FileSpreadsheet, Upload } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Building2, FileSpreadsheet, Upload, Download } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 const Vendors = () => {
@@ -174,6 +174,7 @@ const Vendors = () => {
   };
 
   const handleDownloadTemplate = () => {
+    // Blank template with only headers
     const headers = ['Vendor ID', 'Vendor Name', 'Address', 'GST Number', 'Contact Person Name', 'Contact Person Email'];
     const csvContent = headers.join(',') + '\n';
     
@@ -190,6 +191,29 @@ const Vendors = () => {
     toast({
       title: "Template Downloaded",
       description: "Blank vendor template has been downloaded.",
+    });
+  };
+
+  const handleDownloadAllVendors = () => {
+    const headers = ['Vendor ID', 'Vendor Name', 'Address', 'GST Number', 'Contact Person Name', 'Contact Person Email'];
+    const rows = vendors.map(v => 
+      [v.id, v.name, `"${v.address.replace(/"/g, '""')}"`, v.gst, v.contact_person_name, v.contact_person_email].join(',')
+    );
+    const csvContent = headers.join(',') + '\n' + rows.join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'all_vendors.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: "Export Complete",
+      description: `${vendors.length} vendor(s) exported successfully.`,
     });
   };
 
@@ -215,13 +239,42 @@ const Vendors = () => {
         return;
       }
 
-      // Parse and import vendors
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const nameIndex = headers.findIndex(h => h.includes('vendor') && h.includes('name'));
+      const addressIndex = headers.findIndex(h => h.includes('address'));
+      const gstIndex = headers.findIndex(h => h.includes('gst'));
+      const contactNameIndex = headers.findIndex(h => h.includes('contact') && h.includes('name'));
+      const contactEmailIndex = headers.findIndex(h => h.includes('email'));
+
+      let importedCount = 0;
+      for (let i = 1; i < lines.length; i++) {
+        // Handle CSV with quoted fields
+        const values = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)?.map(v => v.replace(/^"|"$/g, '').trim()) || lines[i].split(',').map(v => v.trim());
+        
+        const name = nameIndex >= 0 ? values[nameIndex] : '';
+        const address = addressIndex >= 0 ? values[addressIndex] : '';
+        const gst = gstIndex >= 0 ? values[gstIndex] : '';
+        const contactName = contactNameIndex >= 0 ? values[contactNameIndex] : '';
+        const contactEmail = contactEmailIndex >= 0 ? values[contactEmailIndex] : '';
+        
+        if (name) {
+          await addVendor({
+            name,
+            address,
+            gst,
+            phone: '',
+            contact_person_name: contactName,
+            contact_person_email: contactEmail,
+          });
+          importedCount++;
+        }
+      }
+      
       toast({
-        title: "Upload Processing",
-        description: "Vendors are being imported...",
+        title: "Import Complete",
+        description: `${importedCount} vendor(s) imported successfully.`,
       });
       
-      // TODO: Implement actual import logic
       await refreshVendors();
     };
     reader.readAsText(file);
@@ -257,17 +310,19 @@ const Vendors = () => {
   return (
     <AppLayout>
       <div className="animate-fade-in">
-        <div className="page-header">
+        <div className="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="page-title">Vendors</h1>
-            <p className="text-muted-foreground text-sm mt-1">Manage your vendor directory</p>
+            <p className="text-muted-foreground text-sm mt-1">
+              {isMainAdmin ? 'Manage your vendor directory' : 'View vendor directory'}
+            </p>
           </div>
           <div className="flex gap-2 flex-wrap">
             {/* Main Admin: Bulk operations */}
             {canBulkUpload && (
               <>
                 <Button variant="outline" className="gap-2" onClick={handleDownloadTemplate}>
-                  <FileSpreadsheet className="h-4 w-4" />
+                  <Download className="h-4 w-4" />
                   Download Vendor Master Template
                 </Button>
                 <Button 
@@ -426,6 +481,16 @@ const Vendors = () => {
               </div>
             )}
           </div>
+          
+          {/* Download All Vendors Button */}
+          {vendors.length > 0 && (
+            <div className="p-4 border-t flex justify-end">
+              <Button variant="outline" className="gap-2" onClick={handleDownloadAllVendors}>
+                <Download className="h-4 w-4" />
+                Download All Vendors (Excel)
+              </Button>
+            </div>
+          )}
         </Card>
 
         {/* Add/Edit Modal */}
