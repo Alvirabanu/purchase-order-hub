@@ -25,6 +25,8 @@ import {
   ChevronLeft,
   Menu,
   CheckSquare,
+  XCircle,
+  Download,
 } from 'lucide-react';
 
 const getRoleLabel = (role: string) => {
@@ -64,14 +66,19 @@ export function AppSidebar() {
     navigate('/login');
   };
 
-  // Define nav items with role-based visibility
+  // Define nav items with role-based visibility per requirements:
+  // Main Admin: Dashboard, Products, Vendors, Create PO, PO Register, Approvals, Rejected
+  // PO Creator: Dashboard, Products, Create PO, PO Register
+  // Approval Admin: Dashboard, PO Register, Approvals, Rejected
   const allNavItems: NavItem[] = [
     { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard, visibleFor: ['main_admin', 'po_creator', 'approval_admin'] },
     { title: 'Products', url: '/products', icon: Package, visibleFor: ['main_admin', 'po_creator'] },
-    { title: 'Vendors', url: '/vendors', icon: Building2, visibleFor: ['main_admin', 'po_creator'] },
-    { title: 'Create PO', url: '/create-po', icon: FilePlus, visibleFor: ['po_creator'] },
+    { title: 'Vendors', url: '/vendors', icon: Building2, visibleFor: ['main_admin'] },
+    { title: 'Create PO', url: '/create-po', icon: FilePlus, visibleFor: ['main_admin', 'po_creator'] },
     { title: 'PO Register', url: '/po-register', icon: ClipboardList, visibleFor: ['main_admin', 'po_creator', 'approval_admin'] },
-    { title: 'Approvals', url: '/approvals', icon: CheckSquare, visibleFor: ['approval_admin'] },
+    { title: 'Approvals', url: '/approvals', icon: CheckSquare, visibleFor: ['main_admin', 'approval_admin'] },
+    { title: 'Rejected', url: '/rejected', icon: XCircle, visibleFor: ['main_admin', 'approval_admin'] },
+    { title: 'PO Download', url: '/po-download', icon: Download, visibleFor: ['approval_admin'] },
   ];
 
   // Filter nav items based on user role
@@ -142,7 +149,7 @@ export function AppSidebar() {
         {!isCollapsed && user && (
           <div className="mb-3 px-1">
             <p className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</p>
-            <p className="text-xs text-sidebar-muted truncate mb-2">{user.email}</p>
+            <p className="text-xs text-sidebar-muted truncate mb-2">{user.email || 'Local User'}</p>
             <Badge className={`text-xs ${getRoleColor(user.role)}`}>
               {getRoleLabel(user.role)}
             </Badge>

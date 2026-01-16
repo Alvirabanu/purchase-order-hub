@@ -5,6 +5,7 @@ export interface Vendor {
   name: string;
   gst: string;
   address: string;
+  phone: string;
   contact_person_name: string;
   contact_person_email: string;
 }
@@ -18,8 +19,9 @@ export interface Product {
   current_stock: number;
   reorder_level: number;
   unit: 'pcs' | 'boxes';
-  default_po_quantity: number;
+  po_quantity: number;
   include_in_create_po: boolean;
+  added_to_po_queue: boolean;
 }
 
 export interface POItem {
@@ -73,4 +75,10 @@ export interface PODownloadLog {
   downloaded_by: string;
   downloaded_at: string;
   location: string;
+}
+
+export interface POQueueItem {
+  productId: string;
+  quantity: number;
+  addedAt: string;
 }
