@@ -1,10 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -20,26 +19,53 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
 import { useDataStore } from '@/contexts/DataStoreContext';
 import { Product } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { Plus, Search, Pencil, Trash2, Package, AlertCircle, FileSpreadsheet, Upload } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Package, AlertCircle, FileSpreadsheet, Upload, ShoppingCart, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 const Products = () => {
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const isMainAdmin = user?.role === 'main_admin';
+  const isPOCreator = user?.role === 'po_creator';
+  
   const canManageProducts = hasPermission('manage_products');
+  const canBulkUpload = hasPermission('bulk_upload_products');
   const canBulkDelete = hasPermission('bulk_delete_products');
+  const canCreatePO = hasPermission('create_po');
+  const canAddSingle = hasPermission('add_single_product');
 
-  const { products, vendors, updateProduct, addProduct, deleteProduct, deleteProducts, getVendorById } = useDataStore();
+  const { 
+    products, 
+    vendors, 
+    updateProduct, 
+    addProduct, 
+    deleteProduct, 
+    deleteProducts, 
+    getVendorById,
+    addPurchaseOrder,
+    refreshProducts,
+  } = useDataStore();
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [vendorFilter, setVendorFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+  const [poQuantities, setPOQuantities] = useState<Record<string, number>>({});
+  const [isCreatingPO, setIsCreatingPO] = useState(false);
+  const [missingVendors, setMissingVendors] = useState<string[]>([]);
+  const [showMissingVendorsDialog, setShowMissingVendorsDialog] = useState(false);
+  
   const [formData, setFormData] = useState({
     name: '',
     category: '',
@@ -48,13 +74,16 @@ const Products = () => {
     current_stock: 0,
     reorder_level: 0,
     unit: 'pcs' as 'pcs' | 'boxes',
-    default_po_quantity: 0,
-    include_in_create_po: true,
   });
 
   const categories = [...new Set(products.map(p => p.category))];
 
-  const filteredProducts = products.filter(product => {
+  // For PO Creator: Get products that haven't had a PO created yet (include_in_create_po = true)
+  const availableProducts = isPOCreator 
+    ? products.filter(p => p.include_in_create_po)
+    : products;
+
+  const filteredProducts = availableProducts.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       product.brand.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesVendor = vendorFilter === 'all' || product.vendor_id === vendorFilter;
@@ -73,8 +102,6 @@ const Products = () => {
         current_stock: product.current_stock,
         reorder_level: product.reorder_level,
         unit: product.unit,
-        default_po_quantity: product.default_po_quantity,
-        include_in_create_po: product.include_in_create_po,
       });
     } else {
       setEditingProduct(null);
@@ -86,55 +113,77 @@ const Products = () => {
         current_stock: 0, 
         reorder_level: 0,
         unit: 'pcs',
-        default_po_quantity: 0,
-        include_in_create_po: true,
       });
     }
     setIsModalOpen(true);
   };
 
-  const handleSave = () => {
-    if (editingProduct) {
-      updateProduct(editingProduct.id, formData);
+  const handleSave = async () => {
+    try {
+      if (editingProduct) {
+        await updateProduct(editingProduct.id, formData);
+        toast({
+          title: "Product Updated",
+          description: "Product has been updated successfully.",
+        });
+      } else {
+        await addProduct({
+          ...formData,
+          default_po_quantity: 1,
+          include_in_create_po: true,
+        });
+        toast({
+          title: "Product Added",
+          description: "New product has been added successfully.",
+        });
+      }
+      setIsModalOpen(false);
+    } catch (error: any) {
       toast({
-        title: "Product Updated",
-        description: "Product has been updated successfully.",
-      });
-    } else {
-      const newProduct: Product = {
-        id: Date.now().toString(),
-        ...formData,
-      };
-      addProduct(newProduct);
-      toast({
-        title: "Product Added",
-        description: "New product has been added successfully.",
+        title: "Error",
+        description: error.message || "Failed to save product",
+        variant: "destructive",
       });
     }
-    setIsModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
-    deleteProduct(id);
-    setSelectedProducts(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(id);
-      return newSet;
-    });
-    toast({
-      title: "Product Deleted",
-      description: "Product has been removed.",
-    });
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteProduct(id);
+      setSelectedProducts(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+      toast({
+        title: "Product Deleted",
+        description: "Product has been removed.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete product",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleBulkDelete = () => {
-    deleteProducts(Array.from(selectedProducts));
-    const count = selectedProducts.size;
-    setSelectedProducts(new Set());
-    toast({
-      title: "Products Deleted",
-      description: `${count} product(s) have been removed.`,
-    });
+  const handleBulkDelete = async () => {
+    try {
+      await deleteProducts(Array.from(selectedProducts));
+      const count = selectedProducts.size;
+      setSelectedProducts(new Set());
+      toast({
+        title: "Products Deleted",
+        description: `${count} product(s) have been removed.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete products",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSelectAll = (checked: boolean) => {
@@ -158,15 +207,12 @@ const Products = () => {
   };
 
   const handlePOQuantityChange = (id: string, value: number) => {
-    updateProduct(id, { default_po_quantity: value });
-  };
-
-  const handleToggleIncludeInPO = (id: string, checked: boolean) => {
-    updateProduct(id, { include_in_create_po: checked });
+    setPOQuantities(prev => ({ ...prev, [id]: value }));
   };
 
   const handleDownloadTemplate = () => {
-    const headers = ['Product Name', 'Brand', 'Category', 'Supplier/Vendor', 'Current Stock', 'Reorder Level', 'Unit', 'PO Quantity'];
+    // Template matches Admin Products Master fields (NO PO Quantity)
+    const headers = ['Product', 'Brand', 'Category', 'Vendor', 'Current Stock', 'Re-order Level', 'Unit'];
     const csvContent = headers.join(',') + '\n';
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -181,16 +227,136 @@ const Products = () => {
     
     toast({
       title: "Template Downloaded",
-      description: "Excel template has been downloaded.",
+      description: "Blank Excel template has been downloaded.",
     });
   };
 
   const handleUploadExcel = () => {
-    console.log('API: POST /api/products/upload');
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Parse CSV/Excel file
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        toast({
+          title: "Error",
+          description: "File is empty or has no data rows",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const vendorIndex = headers.findIndex(h => h.includes('vendor'));
+      
+      if (vendorIndex === -1) {
+        toast({
+          title: "Error",
+          description: "Vendor column not found in file",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Check for missing vendors
+      const uploadedVendors = new Set<string>();
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',');
+        const vendorName = values[vendorIndex]?.trim();
+        if (vendorName) {
+          uploadedVendors.add(vendorName);
+        }
+      }
+
+      const existingVendorNames = vendors.map(v => v.name.toLowerCase());
+      const missing = Array.from(uploadedVendors).filter(
+        v => !existingVendorNames.includes(v.toLowerCase())
+      );
+
+      if (missing.length > 0) {
+        setMissingVendors(missing);
+        setShowMissingVendorsDialog(true);
+      } else {
+        // Process the upload
+        toast({
+          title: "Upload Processing",
+          description: "Products are being imported...",
+        });
+        // TODO: Implement actual import logic
+      }
+    };
+    reader.readAsText(file);
+    
+    // Reset file input
+    event.target.value = '';
+  };
+
+  const handleDownloadMissingVendorTemplate = () => {
+    const headers = ['Vendor Name', 'Address', 'Phone', 'Email', 'GST / Tax ID'];
+    const rows = missingVendors.map(v => `${v},,,,`);
+    const csvContent = headers.join(',') + '\n' + rows.join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'missing_vendors_template.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
     toast({
-      title: "Upload Excel",
-      description: "Upload functionality placeholder.",
+      title: "Template Downloaded",
+      description: "Vendor template with missing vendors has been downloaded.",
     });
+  };
+
+  const handleCreatePOForProduct = async (product: Product) => {
+    const quantity = poQuantities[product.id] || 1;
+    
+    if (quantity < 1) {
+      toast({
+        title: "Validation Error",
+        description: "PO Quantity must be at least 1",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsCreatingPO(true);
+    try {
+      await addPurchaseOrder(product.vendor_id, [{ productId: product.id, quantity }]);
+      await refreshProducts();
+      
+      // Clear quantity
+      setPOQuantities(prev => {
+        const newQuantities = { ...prev };
+        delete newQuantities[product.id];
+        return newQuantities;
+      });
+      
+      toast({
+        title: "PO Created",
+        description: `Purchase order created for ${product.name}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create PO",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreatingPO(false);
+    }
   };
 
   const handleIntegerInput = (value: string): number => {
@@ -201,28 +367,46 @@ const Products = () => {
   const allSelected = filteredProducts.length > 0 && filteredProducts.every(p => selectedProducts.has(p.id));
   const someSelected = selectedProducts.size > 0;
 
+  // Determine if user can add products (Admin can manage, PO Creator can add single)
+  const canAddProduct = canManageProducts || canAddSingle;
+
   return (
     <AppLayout>
       <div className="animate-fade-in">
         <div className="page-header">
           <div>
             <h1 className="page-title">Products</h1>
-            <p className="text-muted-foreground text-sm mt-1">Manage your product catalog</p>
+            <p className="text-muted-foreground text-sm mt-1">
+              {isMainAdmin ? 'Manage your product catalog' : 'View products and create purchase orders'}
+            </p>
           </div>
-          {canManageProducts && (
-            <div className="flex gap-2 flex-wrap">
-              <Button variant="outline" className="gap-2" onClick={handleDownloadTemplate}>
-                <FileSpreadsheet className="h-4 w-4" />
-                Download Excel Template
-              </Button>
-              <Button 
-                variant="outline" 
-                className="gap-2" 
-                onClick={handleUploadExcel}
-              >
-                <Upload className="h-4 w-4" />
-                Upload Excel
-              </Button>
+          <div className="flex gap-2 flex-wrap">
+            {/* Main Admin: Bulk operations */}
+            {canBulkUpload && (
+              <>
+                <Button variant="outline" className="gap-2" onClick={handleDownloadTemplate}>
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Download Template
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="gap-2" 
+                  onClick={handleUploadExcel}
+                >
+                  <Upload className="h-4 w-4" />
+                  Upload Excel
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </>
+            )}
+            {/* Add Product button for Admin or PO Creator (single) */}
+            {canAddProduct && (
               <Button 
                 onClick={() => handleOpenModal()} 
                 className="gap-2"
@@ -230,8 +414,8 @@ const Products = () => {
                 <Plus className="h-4 w-4" />
                 Add Product
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Filters */}
@@ -312,15 +496,21 @@ const Products = () => {
                         />
                       </th>
                     )}
-                    <th>Product Name</th>
-                    <th>Brand</th>
-                    <th>Category</th>
+                    <th>Product</th>
+                    {!isPOCreator && <th>Brand</th>}
+                    {!isPOCreator && <th>Category</th>}
                     <th>Vendor</th>
                     <th className="text-right">Current Stock</th>
-                    <th className="text-right">Reorder Level</th>
-                    <th>Unit</th>
-                    <th className="text-right w-28">PO Quantity</th>
-                    <th className="text-center">Include in PO</th>
+                    <th className="text-right">Re-order Level</th>
+                    {isMainAdmin && <th>Unit</th>}
+                    {/* PO Creator sees PO Quantity input and Create PO button */}
+                    {isPOCreator && (
+                      <>
+                        <th>Unit</th>
+                        <th className="text-right w-28">PO Quantity</th>
+                        <th className="text-center">Action</th>
+                      </>
+                    )}
                     {canManageProducts && <th className="text-right">Actions</th>}
                   </tr>
                 </thead>
@@ -328,6 +518,8 @@ const Products = () => {
                   {filteredProducts.map((product) => {
                     const vendor = getVendorById(product.vendor_id);
                     const isLowStock = product.current_stock <= product.reorder_level;
+                    const currentQty = poQuantities[product.id] ?? 1;
+                    
                     return (
                       <tr key={product.id}>
                         {canBulkDelete && (
@@ -338,13 +530,25 @@ const Products = () => {
                             />
                           </td>
                         )}
-                        <td className="font-medium">{product.name}</td>
-                        <td>{product.brand}</td>
                         <td>
-                          <span className="inline-flex items-center rounded-md bg-secondary px-2 py-1 text-xs font-medium">
-                            {product.category}
-                          </span>
+                          <div>
+                            <span className="font-medium">{product.name}</span>
+                            {/* PO Creator sees brand + category below product name */}
+                            {isPOCreator && (
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                {product.brand} • {product.category}
+                              </div>
+                            )}
+                          </div>
                         </td>
+                        {!isPOCreator && <td>{product.brand}</td>}
+                        {!isPOCreator && (
+                          <td>
+                            <span className="inline-flex items-center rounded-md bg-secondary px-2 py-1 text-xs font-medium">
+                              {product.category}
+                            </span>
+                          </td>
+                        )}
                         <td>{vendor?.name || '-'}</td>
                         <td className="text-right">
                           <span className={`font-medium ${isLowStock ? 'text-destructive' : ''}`}>
@@ -355,25 +559,40 @@ const Products = () => {
                           )}
                         </td>
                         <td className="text-right">{product.reorder_level}</td>
-                        <td>{product.unit}</td>
-                        <td className="text-right">
-                          <Input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={product.default_po_quantity}
-                            onChange={(e) => handlePOQuantityChange(product.id, handleIntegerInput(e.target.value))}
-                            className="w-20 text-right h-8"
-                            disabled={!canManageProducts}
-                          />
-                        </td>
-                        <td className="text-center">
-                          <Switch
-                            checked={product.include_in_create_po}
-                            onCheckedChange={(checked) => handleToggleIncludeInPO(product.id, checked)}
-                            disabled={!canManageProducts}
-                          />
-                        </td>
+                        {(isMainAdmin || isPOCreator) && <td>{product.unit}</td>}
+                        
+                        {/* PO Creator: PO Quantity input + Create PO button */}
+                        {isPOCreator && (
+                          <>
+                            <td className="text-right">
+                              <Input
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={currentQty}
+                                onChange={(e) => handlePOQuantityChange(product.id, handleIntegerInput(e.target.value))}
+                                className="w-20 text-right h-8"
+                              />
+                            </td>
+                            <td className="text-center">
+                              <Button
+                                size="sm"
+                                onClick={() => handleCreatePOForProduct(product)}
+                                disabled={isCreatingPO || currentQty < 1}
+                                className="gap-1"
+                              >
+                                {isCreatingPO ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <ShoppingCart className="h-4 w-4" />
+                                )}
+                                Create PO
+                              </Button>
+                            </td>
+                          </>
+                        )}
+                        
+                        {/* Main Admin: Edit/Delete actions */}
                         {canManageProducts && (
                           <td className="text-right">
                             <div className="flex justify-end gap-1">
@@ -406,11 +625,15 @@ const Products = () => {
             ) : (
               <div className="empty-state py-16">
                 <Package className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                <h3 className="text-lg font-medium mb-1">No products found</h3>
+                <h3 className="text-lg font-medium mb-1">
+                  {isPOCreator ? 'No products available for PO' : 'No products found'}
+                </h3>
                 <p className="text-muted-foreground text-sm">
                   {searchQuery || vendorFilter !== 'all' || categoryFilter !== 'all'
                     ? 'Try adjusting your filters'
-                    : 'Get started by adding your first product'}
+                    : isPOCreator 
+                      ? 'All products have POs created. Wait for admin to add new products.'
+                      : 'Get started by adding your first product'}
                 </p>
               </div>
             )}
@@ -485,7 +708,7 @@ const Products = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="reorder_level">Reorder Level</Label>
+                  <Label htmlFor="reorder_level">Re-order Level</Label>
                   <Input
                     id="reorder_level"
                     type="number"
@@ -496,41 +719,20 @@ const Products = () => {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="unit">Unit</Label>
-                  <Select
-                    value={formData.unit}
-                    onValueChange={(value: 'pcs' | 'boxes') => setFormData({ ...formData, unit: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pcs">pcs</SelectItem>
-                      <SelectItem value="boxes">boxes</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="default_po_quantity">PO Quantity</Label>
-                  <Input
-                    id="default_po_quantity"
-                    type="number"
-                    value={formData.default_po_quantity}
-                    onChange={(e) => setFormData({ ...formData, default_po_quantity: handleIntegerInput(e.target.value) })}
-                    min="0"
-                    step="1"
-                  />
-                </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="include_in_create_po"
-                  checked={formData.include_in_create_po}
-                  onCheckedChange={(checked) => setFormData({ ...formData, include_in_create_po: checked })}
-                />
-                <Label htmlFor="include_in_create_po">Include in Create PO</Label>
+              <div className="space-y-2">
+                <Label htmlFor="unit">Unit</Label>
+                <Select
+                  value={formData.unit}
+                  onValueChange={(value: 'pcs' | 'boxes') => setFormData({ ...formData, unit: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pcs">pcs</SelectItem>
+                    <SelectItem value="boxes">boxes</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <DialogFooter>
@@ -539,6 +741,49 @@ const Products = () => {
               </Button>
               <Button onClick={handleSave} disabled={!formData.name || !formData.vendor_id}>
                 {editingProduct ? 'Save Changes' : 'Add Product'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Missing Vendors Dialog */}
+        <Dialog open={showMissingVendorsDialog} onOpenChange={setShowMissingVendorsDialog}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-5 w-5" />
+                Missing Vendors
+              </DialogTitle>
+              <DialogDescription>
+                The following vendors from your upload are not found in the system. 
+                Please upload these vendors first before importing products.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Import Blocked</AlertTitle>
+                <AlertDescription>
+                  Product import cannot proceed until all vendors exist in the system.
+                </AlertDescription>
+              </Alert>
+              <div className="mt-4 max-h-40 overflow-y-auto">
+                <ul className="space-y-1">
+                  {missingVendors.map((vendor, idx) => (
+                    <li key={idx} className="text-sm py-1 px-2 bg-muted rounded">
+                      {vendor}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowMissingVendorsDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleDownloadMissingVendorTemplate} className="gap-2">
+                <FileSpreadsheet className="h-4 w-4" />
+                Download Vendor Template
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -5,56 +5,69 @@ import { User, UserRole } from '@/types';
 
 export type Permission = 
   | 'view_dashboard'
-  | 'create_po'
+  | 'view_products'
+  | 'view_vendors'
   | 'view_po_register'
+  | 'view_po_download'
+  // Main Admin permissions (master data only)
+  | 'manage_products'
+  | 'manage_vendors'
+  | 'bulk_upload_products'
+  | 'bulk_upload_vendors'
+  | 'bulk_delete_products'
+  | 'download_product_template'
+  | 'download_vendor_template'
+  // PO Creator permissions
+  | 'create_po'
+  | 'add_single_product'
+  | 'add_single_vendor'
+  // Approval Admin permissions
   | 'approve_po'
   | 'reject_po'
   | 'bulk_approve_po'
-  | 'download_pdf'
-  | 'send_mail'
-  | 'manage_vendors'
-  | 'manage_products'
-  | 'bulk_upload'
-  | 'bulk_delete_products'
-  | 'toggle_include_in_po'
-  | 'view_products'
-  | 'view_vendors'
-  | 'view_approvals'
-  | 'add_single_product'
-  | 'add_single_vendor';
+  | 'download_po'
+  | 'bulk_download_po';
 
 const rolePermissions: Record<UserRole, Permission[]> = {
   main_admin: [
     'view_dashboard',
-    'view_po_register',
     'view_products',
     'view_vendors',
-    'view_approvals',
-    'manage_vendors',
+    'view_po_register',
+    // Master data management
     'manage_products',
-    'bulk_upload',
+    'manage_vendors',
+    'bulk_upload_products',
+    'bulk_upload_vendors',
     'bulk_delete_products',
-    'toggle_include_in_po',
-    'download_pdf',
+    'download_product_template',
+    'download_vendor_template',
+    // Admin CANNOT create POs or approve
   ],
   po_creator: [
     'view_dashboard',
-    'create_po',
-    'view_po_register',
     'view_products',
     'view_vendors',
+    'view_po_register',
+    // PO creation
+    'create_po',
+    // Can add single items only (no bulk)
     'add_single_product',
     'add_single_vendor',
+    // PO Creator CANNOT approve or bulk upload
   ],
   approval_admin: [
     'view_dashboard',
     'view_po_register',
+    'view_po_download',
+    // Approval actions
     'approve_po',
     'reject_po',
     'bulk_approve_po',
-    'view_approvals',
-    'download_pdf',
-    'send_mail',
+    // Download
+    'download_po',
+    'bulk_download_po',
+    // Approval Admin CANNOT edit master data or create POs
   ]
 };
 
@@ -127,7 +140,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, currentSession) => {
+      (event, currentSession) => {
         setSession(currentSession);
         
         if (currentSession?.user) {
