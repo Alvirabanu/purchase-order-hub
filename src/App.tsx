@@ -54,16 +54,86 @@ const AppContent = () => {
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/products" element={<ProtectedRoute><Products /></ProtectedRoute>} />
-        <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
-        <Route path="/create-po" element={<ProtectedRoute><CreatePO /></ProtectedRoute>} />
-        <Route path="/po-register" element={<ProtectedRoute><PORegister /></ProtectedRoute>} />
-        <Route path="/po-download" element={<ProtectedRoute><PODownload /></ProtectedRoute>} />
-        <Route path="/approvals" element={<ProtectedRoute><Approvals /></ProtectedRoute>} />
-        <Route path="/rejected" element={<ProtectedRoute><Rejected /></ProtectedRoute>} />
-        <Route path="/access-manager" element={<ProtectedRoute><AccessManager /></ProtectedRoute>} />
-        <Route path="/po/:id" element={<ProtectedRoute><PODetail /></ProtectedRoute>} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/products"
+          element={
+            <ProtectedRoute>
+              <Products />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/vendors"
+          element={
+            <ProtectedRoute>
+              <Vendors />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/create-po"
+          element={
+            <ProtectedRoute>
+              <CreatePO />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/po-register"
+          element={
+            <ProtectedRoute>
+              <PORegister />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/po-download"
+          element={
+            <ProtectedRoute>
+              <PODownload />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/approvals"
+          element={
+            <ProtectedRoute>
+              <Approvals />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/rejected"
+          element={
+            <ProtectedRoute>
+              <Rejected />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/access-manager"
+          element={
+            <ProtectedRoute>
+              <AccessManager />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/po/:id"
+          element={
+            <ProtectedRoute>
+              <PODetail />
+            </ProtectedRoute>
+          }
+        />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
