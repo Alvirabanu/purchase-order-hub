@@ -83,12 +83,13 @@ const Products = () => {
 
   const categories = [...new Set(products.map(p => p.category))];
 
-  // For PO Creator: Get products that haven't been added to queue yet
-  // For Admin: Show all products
-  // For Approval Admin: Show all products (read-only)
-  const availableProducts = isPOCreator 
-    ? products.filter(p => p.include_in_create_po && !p.added_to_po_queue)
-    : products;
+  // Get PO queue product IDs for filtering
+  const { poQueue } = useDataStore();
+  const queueProductIds = new Set(poQueue.map(item => item.productId));
+  
+  // For ALL roles: Filter out products that are already in the PO Queue
+  // This ensures products "move" to Create PO page when added
+  const availableProducts = products.filter(p => !queueProductIds.has(p.id));
 
   const filteredProducts = availableProducts.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -227,7 +228,11 @@ const Products = () => {
     await updateProduct(id, { po_quantity: value });
   };
 
-  const handleAddToQueue = async (product: Product) => {
+  const handleAddToQueue = async (e: React.MouseEvent, product: Product) => {
+    // Prevent double-firing and event bubbling
+    e.stopPropagation();
+    e.preventDefault();
+    
     const quantity = product.po_quantity || 1;
     
     if (quantity < 1) {
@@ -235,6 +240,16 @@ const Products = () => {
         title: "Validation Error",
         description: "PO Quantity must be at least 1",
         variant: "destructive",
+      });
+      return;
+    }
+
+    // Check if already in queue (prevent duplicates)
+    if (queueProductIds.has(product.id)) {
+      toast({
+        title: "Already in Queue",
+        description: `${product.name} is already in the PO Queue`,
+        variant: "default",
       });
       return;
     }
@@ -648,7 +663,7 @@ const Products = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleAddToQueue(product)}
+                              onClick={(e) => handleAddToQueue(e, product)}
                               disabled={isAddingToQueue === product.id || (product.po_quantity || 1) < 1}
                               className="gap-1"
                             >
