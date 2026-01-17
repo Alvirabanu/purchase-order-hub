@@ -58,6 +58,7 @@ const rolePermissions: Record<UserRole, Permission[]> = {
     'add_to_po_queue',
     'edit_po_quantity',
     'approve_po',
+    'reject_po', // Added: Main Admin can also reject
     'bulk_approve_po',
     'download_po',
     'bulk_download_po',

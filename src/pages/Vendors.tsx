@@ -247,6 +247,8 @@ const Vendors = () => {
       const contactEmailIndex = headers.findIndex(h => h.includes('email'));
 
       let importedCount = 0;
+      const skippedDuplicates: string[] = [];
+      
       for (let i = 1; i < lines.length; i++) {
         // Handle CSV with quoted fields
         const values = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)?.map(v => v.replace(/^"|"$/g, '').trim()) || lines[i].split(',').map(v => v.trim());
@@ -258,22 +260,37 @@ const Vendors = () => {
         const contactEmail = contactEmailIndex >= 0 ? values[contactEmailIndex] : '';
         
         if (name) {
-          await addVendor({
-            name,
-            address,
-            gst,
-            phone: '',
-            contact_person_name: contactName,
-            contact_person_email: contactEmail,
-          });
-          importedCount++;
+          try {
+            await addVendor({
+              name,
+              address,
+              gst,
+              phone: '',
+              contact_person_name: contactName,
+              contact_person_email: contactEmail,
+            });
+            importedCount++;
+          } catch (error: any) {
+            if (error.message?.includes('already exists')) {
+              skippedDuplicates.push(name);
+            }
+          }
         }
       }
       
-      toast({
-        title: "Import Complete",
-        description: `${importedCount} vendor(s) imported successfully.`,
-      });
+      if (skippedDuplicates.length > 0) {
+        const displayDuplicates = skippedDuplicates.slice(0, 10);
+        toast({
+          title: "Import Complete with Duplicates",
+          description: `Added: ${importedCount}. Skipped duplicates: ${skippedDuplicates.length}${skippedDuplicates.length > 10 ? ` (showing first 10)` : ''}: ${displayDuplicates.join(', ')}`,
+          variant: "default",
+        });
+      } else {
+        toast({
+          title: "Import Complete",
+          description: `${importedCount} vendor(s) imported successfully.`,
+        });
+      }
       
       await refreshVendors();
     };
