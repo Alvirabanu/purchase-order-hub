@@ -38,6 +38,7 @@ interface DataStoreContextType {
   refreshProducts: () => void;
   updateProduct: (id: string, updates: Partial<Product>) => Promise<void>;
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
+  addProductsBatch: (productsData: Omit<Product, 'id'>[]) => Promise<number>;
   deleteProduct: (id: string) => Promise<void>;
   deleteProducts: (ids: string[]) => Promise<void>;
   
@@ -62,6 +63,7 @@ interface DataStoreContextType {
   vendorsLoading: boolean;
   refreshVendors: () => void;
   addVendor: (vendor: Omit<Vendor, 'id'>) => Promise<void>;
+  addVendorsBatch: (vendorsData: Omit<Vendor, 'id'>[]) => Promise<{ added: number; duplicates: string[] }>;
   updateVendor: (id: string, updates: Partial<Vendor>) => Promise<void>;
   deleteVendor: (id: string) => Promise<void>;
   deleteVendors: (ids: string[]) => Promise<void>;
@@ -231,16 +233,39 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     // Duplicates are now allowed for Products (no blocking)
     const newProduct: Product = {
       ...product,
-      id: 'P' + Date.now(),
+      id: 'P' + Date.now() + Math.random().toString(36).substr(2, 9),
       po_quantity: product.po_quantity || 1,
       include_in_create_po: product.include_in_create_po ?? true,
       added_to_po_queue: product.added_to_po_queue ?? false,
       po_status: product.po_status ?? 'available',
     };
-    const updated = [...products, newProduct];
-    setProducts(updated);
-    saveToStorage(STORAGE_KEYS.PRODUCTS, updated);
-  }, [products, saveToStorage]);
+    // Use functional update to prevent race conditions
+    setProducts(prev => {
+      const updated = [...prev, newProduct];
+      saveToStorage(STORAGE_KEYS.PRODUCTS, updated);
+      return updated;
+    });
+  }, [saveToStorage]);
+
+  // Batch add products for bulk import
+  const addProductsBatch = useCallback(async (productsData: Omit<Product, 'id'>[]) => {
+    const newProducts: Product[] = productsData.map((product, idx) => ({
+      ...product,
+      id: 'P' + Date.now() + idx + Math.random().toString(36).substr(2, 9),
+      po_quantity: product.po_quantity || 1,
+      include_in_create_po: product.include_in_create_po ?? true,
+      added_to_po_queue: product.added_to_po_queue ?? false,
+      po_status: product.po_status ?? 'available',
+    }));
+    
+    setProducts(prev => {
+      const updated = [...prev, ...newProducts];
+      saveToStorage(STORAGE_KEYS.PRODUCTS, updated);
+      return updated;
+    });
+    
+    return newProducts.length;
+  }, [saveToStorage]);
 
   const updateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
     const updated = products.map(p => p.id === id ? { ...p, ...updates } : p);
@@ -304,19 +329,66 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
 
   // Vendor operations
   const addVendor = useCallback(async (vendor: Omit<Vendor, 'id'>) => {
-    // Check for duplicate
-    if (isDuplicateVendor(vendor.name)) {
+    // Check for duplicate - need to read current state
+    const currentVendors = loadFromStorage<Vendor[]>(STORAGE_KEYS.VENDORS, []);
+    const normalizedName = vendor.name.trim().toLowerCase();
+    const isDuplicate = currentVendors.some(v => v.name.trim().toLowerCase() === normalizedName);
+    
+    if (isDuplicate) {
       throw new Error('A vendor with the same name already exists.');
     }
 
     const newVendor: Vendor = {
       ...vendor,
-      id: 'V' + String(vendors.length + 1).padStart(3, '0'),
+      id: 'V' + Date.now() + Math.random().toString(36).substr(2, 9),
     };
-    const updated = [...vendors, newVendor];
-    setVendors(updated);
-    saveToStorage(STORAGE_KEYS.VENDORS, updated);
-  }, [vendors, saveToStorage, isDuplicateVendor]);
+    
+    // Use functional update to prevent race conditions
+    setVendors(prev => {
+      const updated = [...prev, newVendor];
+      saveToStorage(STORAGE_KEYS.VENDORS, updated);
+      return updated;
+    });
+  }, [saveToStorage, loadFromStorage]);
+
+  // Batch add vendors for bulk import (with duplicate checking)
+  const addVendorsBatch = useCallback(async (vendorsData: Omit<Vendor, 'id'>[]) => {
+    // Get current vendors from storage to check duplicates
+    const currentVendors = loadFromStorage<Vendor[]>(STORAGE_KEYS.VENDORS, []);
+    const existingNames = new Set(currentVendors.map(v => v.name.trim().toLowerCase()));
+    
+    const validVendors: Omit<Vendor, 'id'>[] = [];
+    const duplicates: string[] = [];
+    const processedNames = new Set<string>();
+    
+    for (const vendor of vendorsData) {
+      const normalizedName = vendor.name.trim().toLowerCase();
+      
+      // Skip if already exists in DB or in this batch
+      if (existingNames.has(normalizedName) || processedNames.has(normalizedName)) {
+        duplicates.push(vendor.name);
+        continue;
+      }
+      
+      validVendors.push(vendor);
+      processedNames.add(normalizedName);
+    }
+    
+    const newVendors: Vendor[] = validVendors.map((vendor, idx) => ({
+      ...vendor,
+      id: 'V' + Date.now() + idx + Math.random().toString(36).substr(2, 9),
+    }));
+    
+    if (newVendors.length > 0) {
+      setVendors(prev => {
+        const updated = [...prev, ...newVendors];
+        saveToStorage(STORAGE_KEYS.VENDORS, updated);
+        return updated;
+      });
+    }
+    
+    return { added: newVendors.length, duplicates };
+  }, [saveToStorage, loadFromStorage]);
 
   const updateVendor = useCallback(async (id: string, updates: Partial<Vendor>) => {
     const updated = vendors.map(v => v.id === id ? { ...v, ...updates } : v);
@@ -521,6 +593,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       refreshProducts,
       updateProduct,
       addProduct,
+      addProductsBatch,
       deleteProduct,
       deleteProducts,
       poQueue,
@@ -539,6 +612,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       vendorsLoading,
       refreshVendors,
       addVendor,
+      addVendorsBatch,
       updateVendor,
       deleteVendor,
       deleteVendors,

@@ -51,6 +51,7 @@ const Products = () => {
     vendors, 
     updateProduct, 
     addProduct, 
+    addProductsBatch,
     deleteProduct, 
     deleteProducts, 
     getVendorById,
@@ -317,6 +318,8 @@ const Products = () => {
       const text = e.target?.result as string;
       const lines = text.split('\n').filter(line => line.trim());
       
+      console.log('[Products Upload] Total lines (including header):', lines.length);
+      
       if (lines.length < 2) {
         toast({
           title: "Error",
@@ -345,7 +348,7 @@ const Products = () => {
         return;
       }
 
-      // Check for missing vendors
+      // Check for missing vendors first
       const uploadedVendors = new Set<string>();
       for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(',');
@@ -363,47 +366,75 @@ const Products = () => {
       if (missing.length > 0) {
         setMissingVendors(missing);
         setShowMissingVendorsDialog(true);
-      } else {
-        // Process and import products - no duplicate blocking
-        let importedCount = 0;
+        event.target.value = '';
+        return;
+      }
+      
+      // Collect all valid products to import in a batch
+      const productsToImport: Omit<Product, 'id'>[] = [];
+      let skippedRows = 0;
+      
+      console.log('[Products Upload] Processing', lines.length - 1, 'data rows');
+      
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim());
+        const vendorName = values[vendorIndex];
+        const vendor = vendors.find(v => v.name.toLowerCase() === vendorName?.toLowerCase());
         
-        for (let i = 1; i < lines.length; i++) {
-          const values = lines[i].split(',').map(v => v.trim());
-          const vendorName = values[vendorIndex];
-          const vendor = vendors.find(v => v.name.toLowerCase() === vendorName?.toLowerCase());
-          
-          if (vendor) {
-            const name = nameIndex >= 0 ? values[nameIndex] : '';
-            const brand = brandIndex >= 0 ? values[brandIndex] : '';
-            const category = categoryIndex >= 0 ? values[categoryIndex] : '';
-            const currentStock = stockIndex >= 0 ? parseInt(values[stockIndex]) || 0 : 0;
-            const reorderLevel = reorderIndex >= 0 ? parseInt(values[reorderIndex]) || 0 : 0;
-            let unit = unitIndex >= 0 ? values[unitIndex]?.toLowerCase() : 'pcs';
-            if (unit !== 'pcs' && unit !== 'boxes') unit = 'pcs';
-            const poQuantity = poQtyIndex >= 0 ? parseInt(values[poQtyIndex]) || 1 : 1;
-            
-            if (name) {
-              await addProduct({
-                name,
-                brand,
-                category,
-                vendor_id: vendor.id,
-                current_stock: currentStock,
-                reorder_level: reorderLevel,
-                unit: unit as 'pcs' | 'boxes',
-                po_quantity: poQuantity,
-                include_in_create_po: true,
-                added_to_po_queue: false,
-                po_status: 'available',
-              });
-              importedCount++;
-            }
-          }
+        const name = nameIndex >= 0 ? values[nameIndex] : '';
+        
+        // Skip rows without required product name
+        if (!name || !name.trim()) {
+          console.log('[Products Upload] Skipping row', i, '- no product name');
+          skippedRows++;
+          continue;
         }
+        
+        if (!vendor) {
+          console.log('[Products Upload] Skipping row', i, '- vendor not found:', vendorName);
+          skippedRows++;
+          continue;
+        }
+        
+        const brand = brandIndex >= 0 ? values[brandIndex] : '';
+        const category = categoryIndex >= 0 ? values[categoryIndex] : '';
+        const currentStock = stockIndex >= 0 ? parseInt(values[stockIndex]) || 0 : 0;
+        const reorderLevel = reorderIndex >= 0 ? parseInt(values[reorderIndex]) || 0 : 0;
+        let unit = unitIndex >= 0 ? values[unitIndex]?.toLowerCase() : 'pcs';
+        if (unit !== 'pcs' && unit !== 'boxes') unit = 'pcs';
+        const poQuantity = poQtyIndex >= 0 ? parseInt(values[poQtyIndex]) || 1 : 1;
+        
+        productsToImport.push({
+          name: name.trim(),
+          brand: brand || '',
+          category: category || '',
+          vendor_id: vendor.id,
+          current_stock: currentStock,
+          reorder_level: reorderLevel,
+          unit: unit as 'pcs' | 'boxes',
+          po_quantity: poQuantity,
+          include_in_create_po: true,
+          added_to_po_queue: false,
+          po_status: 'available',
+        });
+      }
+      
+      console.log('[Products Upload] Products to import:', productsToImport.length);
+      console.log('[Products Upload] Skipped rows:', skippedRows);
+      
+      // Batch import all products at once
+      if (productsToImport.length > 0) {
+        const importedCount = await addProductsBatch(productsToImport);
         
         toast({
           title: "Import Complete",
-          description: `${importedCount} product(s) imported successfully.`,
+          description: `Imported ${importedCount} items. Skipped ${skippedRows} rows.`,
+        });
+      } else {
+        toast({
+          title: "No Products Imported",
+          description: `All ${skippedRows} rows were invalid or empty.`,
+          variant: "destructive",
         });
       }
     };
