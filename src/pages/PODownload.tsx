@@ -12,15 +12,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { useDataStore } from '@/contexts/DataStoreContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Download, Search, FolderDown, FileDown, Package } from 'lucide-react';
+import { Download, Search, FolderDown, FileDown, Package, FileSpreadsheet, FileText } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import jsPDF from 'jspdf';
+import * as XLSX from 'xlsx';
+import JSZip from 'jszip';
+
+type DownloadFormat = 'pdf' | 'xlsx';
 
 const PODownload = () => {
   const { hasPermission } = useAuth();
-  const { purchaseOrders, getVendorById, addDownloadLog } = useDataStore();
+  const { purchaseOrders, getVendorById, getProductById, addDownloadLog } = useDataStore();
   
   const canDownload = hasPermission('download_po');
   const canBulkDownload = hasPermission('bulk_download_po');
@@ -31,6 +43,7 @@ const PODownload = () => {
   const [downloadLocation, setDownloadLocation] = useState('');
   const [isBulkDownload, setIsBulkDownload] = useState(false);
   const [singleDownloadId, setSingleDownloadId] = useState<string | null>(null);
+  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>('pdf');
 
   // Only show approved POs
   const approvedPOs = purchaseOrders.filter(po => po.status === 'approved');
@@ -92,7 +105,109 @@ const PODownload = () => {
     setShowLocationDialog(true);
   };
 
-  const confirmDownload = () => {
+  // Generate PDF for a single PO
+  const generatePDF = (po: typeof purchaseOrders[0]) => {
+    const doc = new jsPDF();
+    const vendor = getVendorById(po.vendor_id);
+    
+    // Title
+    doc.setFontSize(20);
+    doc.setFont('helvetica', 'bold');
+    doc.text('PURCHASE ORDER', 105, 20, { align: 'center' });
+    
+    // PO Details
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`PO Number: ${po.po_number}`, 20, 40);
+    doc.text(`Date: ${formatDate(po.date)}`, 20, 50);
+    doc.text(`Vendor: ${po.vendorName || vendor?.name || 'Unknown'}`, 20, 60);
+    doc.text(`Status: ${po.status.toUpperCase()}`, 20, 70);
+    
+    if (po.approved_at) {
+      doc.text(`Approved: ${formatDate(po.approved_at)}`, 20, 80);
+    }
+    
+    // Items table header
+    let yPos = 100;
+    doc.setFont('helvetica', 'bold');
+    doc.setFillColor(240, 240, 240);
+    doc.rect(20, yPos - 5, 170, 10, 'F');
+    doc.text('Product', 25, yPos);
+    doc.text('Brand', 75, yPos);
+    doc.text('Category', 105, yPos);
+    doc.text('Unit', 145, yPos);
+    doc.text('Qty', 170, yPos);
+    
+    // Items
+    doc.setFont('helvetica', 'normal');
+    yPos += 15;
+    
+    if (po.items && po.items.length > 0) {
+      po.items.forEach((item) => {
+        const product = getProductById(item.product_id);
+        if (product) {
+          doc.text(product.name.substring(0, 25), 25, yPos);
+          doc.text(product.brand.substring(0, 15), 75, yPos);
+          doc.text(product.category.substring(0, 15), 105, yPos);
+          doc.text(product.unit, 145, yPos);
+          doc.text(String(item.quantity), 170, yPos);
+          yPos += 10;
+          
+          // Add new page if needed
+          if (yPos > 270) {
+            doc.addPage();
+            yPos = 20;
+          }
+        }
+      });
+    }
+    
+    // Total
+    yPos += 10;
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Total Items: ${po.total_items}`, 20, yPos);
+    
+    return doc;
+  };
+
+  // Generate Excel for a single PO
+  const generateExcel = (po: typeof purchaseOrders[0]) => {
+    const vendor = getVendorById(po.vendor_id);
+    
+    // Prepare data
+    const wsData = [
+      ['PURCHASE ORDER'],
+      [],
+      ['PO Number', po.po_number],
+      ['Date', formatDate(po.date)],
+      ['Vendor', po.vendorName || vendor?.name || 'Unknown'],
+      ['Status', po.status.toUpperCase()],
+      po.approved_at ? ['Approved', formatDate(po.approved_at)] : [],
+      [],
+      ['Product', 'Brand', 'Category', 'Unit', 'Quantity'],
+    ];
+    
+    // Add items
+    if (po.items && po.items.length > 0) {
+      po.items.forEach((item) => {
+        const product = getProductById(item.product_id);
+        if (product) {
+          wsData.push([product.name, product.brand, product.category, product.unit, String(item.quantity)]);
+        }
+      });
+    }
+    
+    wsData.push([]);
+    wsData.push(['Total Items', String(po.total_items)]);
+    
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Purchase Order');
+    
+    return wb;
+  };
+
+  const confirmDownload = async () => {
     if (!downloadLocation.trim()) {
       toast({
         title: "Location Required",
@@ -110,44 +225,61 @@ const PODownload = () => {
       addDownloadLog(id, downloadLocation.trim());
     });
 
-    // Generate and download files
-    if (posToDownload.length === 1) {
-      const po = posToDownload[0];
-      const fileName = `PO-${po.po_number}-${formatDateForFile(po.date)}.pdf`;
-      
-      // Create a simple text file as placeholder (in real app, generate PDF)
-      const content = `Purchase Order: ${po.po_number}\nDate: ${formatDate(po.date)}\nVendor: ${po.vendorName || getVendorById(po.vendor_id)?.name || 'Unknown'}\nTotal Items: ${po.total_items}\nStatus: ${po.status}\nDownload Location: ${downloadLocation}`;
-      
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      toast({
-        title: "Download Started",
-        description: `Downloading ${fileName}`,
-      });
-    } else {
-      // For multiple files, download individually (in real app, create ZIP)
-      posToDownload.forEach(po => {
-        const fileName = `PO-${po.po_number}-${formatDateForFile(po.date)}.pdf`;
-        const content = `Purchase Order: ${po.po_number}\nDate: ${formatDate(po.date)}\nVendor: ${po.vendorName || getVendorById(po.vendor_id)?.name || 'Unknown'}\nTotal Items: ${po.total_items}\nStatus: ${po.status}\nDownload Location: ${downloadLocation}`;
+    try {
+      if (posToDownload.length === 1) {
+        // Single file download
+        const po = posToDownload[0];
+        const fileDate = formatDateForFile(po.date);
         
-        const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+        if (downloadFormat === 'pdf') {
+          const doc = generatePDF(po);
+          doc.save(`PO-${po.po_number}-${fileDate}.pdf`);
+        } else {
+          const wb = generateExcel(po);
+          XLSX.writeFile(wb, `PO-${po.po_number}-${fileDate}.xlsx`);
+        }
+        
+        toast({
+          title: "Download Complete",
+          description: `PO-${po.po_number} downloaded as ${downloadFormat.toUpperCase()}`,
+        });
+      } else {
+        // Bulk download - create ZIP
+        const zip = new JSZip();
+        
+        for (const po of posToDownload) {
+          const fileDate = formatDateForFile(po.date);
+          
+          if (downloadFormat === 'pdf') {
+            const doc = generatePDF(po);
+            const pdfBlob = doc.output('blob');
+            zip.file(`PO-${po.po_number}-${fileDate}.pdf`, pdfBlob);
+          } else {
+            const wb = generateExcel(po);
+            const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            zip.file(`PO-${po.po_number}-${fileDate}.xlsx`, wbout);
+          }
+        }
+        
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
         const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = fileName;
+        link.href = URL.createObjectURL(zipBlob);
+        link.download = `PO-Bulk-Download-${new Date().toISOString().split('T')[0]}.zip`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-      });
-      
+        
+        toast({
+          title: "Bulk Download Complete",
+          description: `${posToDownload.length} POs downloaded as ZIP`,
+        });
+      }
+    } catch (error) {
+      console.error('Download error:', error);
       toast({
-        title: "Bulk Download Started",
-        description: `Downloading ${posToDownload.length} PO files`,
+        title: "Download Failed",
+        description: "An error occurred while generating files",
+        variant: "destructive",
       });
     }
 
@@ -187,7 +319,7 @@ const PODownload = () => {
         <div className="page-header">
           <div>
             <h1 className="page-title">PO Download</h1>
-            <p className="text-muted-foreground text-sm mt-1">Download approved purchase orders</p>
+            <p className="text-muted-foreground text-sm mt-1">Download approved purchase orders as PDF or Excel</p>
           </div>
         </div>
 
@@ -209,17 +341,38 @@ const PODownload = () => {
         {/* Bulk Download Action */}
         {someSelected && canBulkDownload && (
           <Card className="mb-4 border-primary/30 bg-primary/5">
-            <CardContent className="p-4 flex items-center justify-between">
+            <CardContent className="p-4 flex items-center justify-between flex-wrap gap-4">
               <span className="text-sm font-medium">
                 {selectedPOs.size} PO{selectedPOs.size > 1 ? 's' : ''} selected
               </span>
-              <Button 
-                onClick={handleBulkDownload}
-                className="gap-2"
-              >
-                <FolderDown className="h-4 w-4" />
-                Bulk Download ({selectedPOs.size})
-              </Button>
+              <div className="flex items-center gap-3">
+                <Select value={downloadFormat} onValueChange={(v: DownloadFormat) => setDownloadFormat(v)}>
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pdf">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        PDF
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="xlsx">
+                      <div className="flex items-center gap-2">
+                        <FileSpreadsheet className="h-4 w-4" />
+                        Excel
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button 
+                  onClick={handleBulkDownload}
+                  className="gap-2"
+                >
+                  <FolderDown className="h-4 w-4" />
+                  Bulk Download ({selectedPOs.size})
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -303,16 +456,41 @@ const PODownload = () => {
 
         {/* Location Dialog */}
         <Dialog open={showLocationDialog} onOpenChange={setShowLocationDialog}>
-          <DialogContent className="sm:max-w-[400px]">
+          <DialogContent className="sm:max-w-[450px]">
             <DialogHeader>
               <DialogTitle>
                 {isBulkDownload ? 'Bulk Download POs' : 'Download PO'}
               </DialogTitle>
               <DialogDescription>
-                Enter a download location reference for tracking purposes. Files will download via your browser.
+                Select format and enter a location reference for tracking.
               </DialogDescription>
             </DialogHeader>
-            <div className="py-4">
+            <div className="py-4 space-y-4">
+              {/* Format Selector */}
+              <div className="space-y-2">
+                <Label>Download Format</Label>
+                <Select value={downloadFormat} onValueChange={(v: DownloadFormat) => setDownloadFormat(v)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pdf">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        PDF Document
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="xlsx">
+                      <div className="flex items-center gap-2">
+                        <FileSpreadsheet className="h-4 w-4" />
+                        Excel Spreadsheet (.xlsx)
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Location Reference */}
               <div className="space-y-2">
                 <Label htmlFor="location">Download Location (Reference)</Label>
                 <Input
@@ -322,24 +500,26 @@ const PODownload = () => {
                   placeholder="e.g., Laptop > Downloads, Warehouse A"
                 />
                 <p className="text-xs text-muted-foreground">
-                  This is logged for audit purposes. Actual files download to your browser's default location.
+                  Browsers download to your default Downloads folder. This location is only for tracking.
                 </p>
               </div>
-              <p className="text-sm text-muted-foreground mt-4">
+              
+              <p className="text-sm text-muted-foreground">
                 {isBulkDownload 
-                  ? `${selectedPOs.size} PO${selectedPOs.size > 1 ? 's' : ''} will be downloaded.`
-                  : 'PO will be downloaded as a PDF file.'
+                  ? `${selectedPOs.size} PO${selectedPOs.size > 1 ? 's' : ''} will be downloaded as a ZIP file.`
+                  : `PO will be downloaded as a ${downloadFormat.toUpperCase()} file.`
                 }
               </p>
-              <p className="text-xs text-muted-foreground mt-2">
-                File naming: PO-&lt;Number&gt;-&lt;Date&gt;.pdf
+              <p className="text-xs text-muted-foreground">
+                File naming: PO-&lt;Number&gt;-&lt;Date&gt;.{downloadFormat}
               </p>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowLocationDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={confirmDownload} disabled={!downloadLocation.trim()}>
+              <Button onClick={confirmDownload} disabled={!downloadLocation.trim()} className="gap-2">
+                {downloadFormat === 'pdf' ? <FileText className="h-4 w-4" /> : <FileSpreadsheet className="h-4 w-4" />}
                 Download
               </Button>
             </DialogFooter>
