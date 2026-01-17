@@ -364,9 +364,8 @@ const Products = () => {
         setMissingVendors(missing);
         setShowMissingVendorsDialog(true);
       } else {
-        // Process and import products with duplicate detection
+        // Process and import products - no duplicate blocking
         let importedCount = 0;
-        const skippedDuplicates: string[] = [];
         
         for (let i = 1; i < lines.length; i++) {
           const values = lines[i].split(',').map(v => v.trim());
@@ -384,43 +383,28 @@ const Products = () => {
             const poQuantity = poQtyIndex >= 0 ? parseInt(values[poQtyIndex]) || 1 : 1;
             
             if (name) {
-              try {
-                await addProduct({
-                  name,
-                  brand,
-                  category,
-                  vendor_id: vendor.id,
-                  current_stock: currentStock,
-                  reorder_level: reorderLevel,
-                  unit: unit as 'pcs' | 'boxes',
-                  po_quantity: poQuantity,
-                  include_in_create_po: true,
-                  added_to_po_queue: false,
-                  po_status: 'available',
-                });
-                importedCount++;
-              } catch (error: any) {
-                if (error.message?.includes('already exists')) {
-                  skippedDuplicates.push(`${name} (${brand || 'No Brand'})`);
-                }
-              }
+              await addProduct({
+                name,
+                brand,
+                category,
+                vendor_id: vendor.id,
+                current_stock: currentStock,
+                reorder_level: reorderLevel,
+                unit: unit as 'pcs' | 'boxes',
+                po_quantity: poQuantity,
+                include_in_create_po: true,
+                added_to_po_queue: false,
+                po_status: 'available',
+              });
+              importedCount++;
             }
           }
         }
         
-        if (skippedDuplicates.length > 0) {
-          const displayDuplicates = skippedDuplicates.slice(0, 10);
-          toast({
-            title: "Import Complete with Duplicates",
-            description: `Added: ${importedCount}. Skipped duplicates: ${skippedDuplicates.length}${skippedDuplicates.length > 10 ? ` (showing first 10)` : ''}: ${displayDuplicates.join(', ')}`,
-            variant: "default",
-          });
-        } else {
-          toast({
-            title: "Import Complete",
-            description: `${importedCount} product(s) imported successfully.`,
-          });
-        }
+        toast({
+          title: "Import Complete",
+          description: `${importedCount} product(s) imported successfully.`,
+        });
       }
     };
     reader.readAsText(file);
