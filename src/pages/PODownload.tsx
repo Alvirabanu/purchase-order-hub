@@ -312,14 +312,58 @@ const PODownload = () => {
     );
   }
 
+  // Download PO list as Excel (table export)
+  const handleDownloadPOList = () => {
+    if (filteredPOs.length === 0) {
+      toast({
+        title: "No Data",
+        description: "No approved POs to export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Prepare data matching table columns
+    const wsData = [
+      ['PO Number', 'Vendor', 'Date', 'Items', 'Approved At'],
+    ];
+    
+    filteredPOs.forEach((po) => {
+      const vendor = getVendorById(po.vendor_id);
+      wsData.push([
+        po.po_number,
+        po.vendorName || vendor?.name || '-',
+        formatDate(po.date),
+        String(po.total_items),
+        po.approved_at ? formatDate(po.approved_at) : '-',
+      ]);
+    });
+    
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'PO List');
+    
+    const fileName = `PO-List-${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    
+    toast({
+      title: "Download Complete",
+      description: `PO list exported as ${fileName}`,
+    });
+  };
+
   return (
     <AppLayout>
       <div className="animate-fade-in">
-        <div className="page-header">
+        <div className="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="page-title">PO Download</h1>
             <p className="text-muted-foreground text-sm mt-1">Download approved purchase orders as PDF or Excel</p>
           </div>
+          <Button onClick={handleDownloadPOList} variant="outline" className="gap-2">
+            <FileSpreadsheet className="h-4 w-4" />
+            Download PO List (Excel)
+          </Button>
         </div>
 
         {/* Search */}

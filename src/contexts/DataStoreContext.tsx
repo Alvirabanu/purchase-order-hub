@@ -228,11 +228,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
   }, [vendors]);
 
   const addProduct = useCallback(async (product: Omit<Product, 'id'>) => {
-    // Check for duplicate
-    if (isDuplicateProduct(product.name, product.brand, product.vendor_id)) {
-      throw new Error('A product with the same name, brand, and vendor already exists.');
-    }
-
+    // Duplicates are now allowed for Products (no blocking)
     const newProduct: Product = {
       ...product,
       id: 'P' + Date.now(),
@@ -244,7 +240,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     const updated = [...products, newProduct];
     setProducts(updated);
     saveToStorage(STORAGE_KEYS.PRODUCTS, updated);
-  }, [products, saveToStorage, isDuplicateProduct]);
+  }, [products, saveToStorage]);
 
   const updateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
     const updated = products.map(p => p.id === id ? { ...p, ...updates } : p);
