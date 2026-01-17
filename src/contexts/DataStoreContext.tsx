@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { Product, PurchaseOrder, Vendor, POItem, POStatus, POQueueItem, UserRole } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 // App User type for credential storage
 export interface AppUser {
@@ -12,15 +14,10 @@ export interface AppUser {
   created_at: string;
 }
 
-// Storage keys
+// Storage keys for local-only data
 const STORAGE_KEYS = {
-  PRODUCTS: 'po_manager_products',
-  VENDORS: 'po_manager_vendors',
-  PURCHASE_ORDERS: 'po_manager_pos',
-  DOWNLOAD_LOGS: 'po_manager_download_logs',
   PO_QUEUE: 'po_manager_po_queue',
   APP_USERS: 'po_manager_app_users',
-  VENDOR_COUNTER: 'po_manager_vendor_counter',
 };
 
 // Extended PO type with additional tracking fields
@@ -99,58 +96,58 @@ interface DataStoreContextType {
 
 const DataStoreContext = createContext<DataStoreContextType | undefined>(undefined);
 
-// Initial sample data
-const initialVendors: Vendor[] = [
-  {
-    id: 'V001',
-    name: 'Tech Components Ltd',
-    gst: '27AABCT1234C1ZV',
-    address: '123 Industrial Area, Mumbai, MH 400001',
-    phone: '+91 98765 43210',
-    contact_person_name: 'Rahul Sharma',
-    contact_person_email: 'rahul@techcomponents.com'
-  },
-  {
-    id: 'V002',
-    name: 'Global Electronics Inc',
-    gst: '29AADCG5678D1ZP',
-    address: '456 Tech Park, Bangalore, KA 560001',
-    phone: '+91 98765 12345',
-    contact_person_name: 'Priya Patel',
-    contact_person_email: 'priya@globalelectronics.com'
-  },
-];
+// Helper to map Supabase product to local Product type
+const mapSupabaseProduct = (p: any): Product => ({
+  id: p.id,
+  name: p.product_name,
+  brand: p.brand || '',
+  category: p.category || '',
+  vendor_id: p.vendor_id || '',
+  current_stock: p.current_stock ?? 0,
+  reorder_level: p.reorder_level ?? 0,
+  unit: (p.unit as 'pcs' | 'boxes') || 'pcs',
+  po_quantity: p.default_po_quantity ?? 1,
+  include_in_create_po: p.include_in_po ?? true,
+  added_to_po_queue: false, // Managed locally
+  po_status: 'available', // Managed locally
+});
 
-const initialProducts: Product[] = [
-  {
-    id: '1',
-    name: 'Copper Wire 2.5mm',
-    brand: 'Finolex',
-    category: 'Electrical',
-    vendor_id: 'V001',
-    current_stock: 150,
-    reorder_level: 50,
-    unit: 'pcs',
-    po_quantity: 1,
-    include_in_create_po: true,
-    added_to_po_queue: false,
-    po_status: 'available'
-  },
-  {
-    id: '2',
-    name: 'LED Panel 40W',
-    brand: 'Philips',
-    category: 'Lighting',
-    vendor_id: 'V002',
-    current_stock: 25,
-    reorder_level: 30,
-    unit: 'pcs',
-    po_quantity: 1,
-    include_in_create_po: true,
-    added_to_po_queue: false,
-    po_status: 'available'
-  },
-];
+// Helper to map Supabase vendor to local Vendor type
+const mapSupabaseVendor = (v: any): Vendor => ({
+  id: v.id,
+  name: v.vendor_name,
+  gst: v.gst_number || '',
+  address: v.address || '',
+  phone: '', // Not in Supabase schema
+  contact_person_name: v.contact_person_name || '',
+  contact_person_email: v.contact_person_email || '',
+});
+
+// Helper to map Supabase PO to local ExtendedPurchaseOrder type
+const mapSupabasePO = (po: any, items: any[], vendors: Vendor[]): ExtendedPurchaseOrder => {
+  const vendor = vendors.find(v => v.id === po.vendor_id);
+  return {
+    id: po.id,
+    po_number: po.po_number,
+    vendor_id: po.vendor_id || '',
+    date: po.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+    total_items: items.length,
+    status: (po.status as POStatus) || 'created',
+    items: items.map(item => ({
+      id: item.id,
+      po_id: item.po_id,
+      product_id: item.product_id || '',
+      quantity: item.quantity,
+    })),
+    created_by: po.created_by || '',
+    vendorName: vendor?.name,
+    approved_by: po.approved_by || undefined,
+    approved_at: po.approved_at || undefined,
+    rejected_by: po.rejected_by || undefined,
+    rejected_at: po.rejected_at || undefined,
+    rejection_reason: po.rejection_reason || undefined,
+  };
+};
 
 export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
@@ -163,7 +160,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
   const [poQueue, setPoQueue] = useState<POQueueItem[]>([]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
 
-  // Load data from localStorage
+  // Load local-only data from localStorage
   const loadFromStorage = useCallback(<T,>(key: string, defaultValue: T): T => {
     try {
       const stored = localStorage.getItem(key);
@@ -176,7 +173,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     return defaultValue;
   }, []);
 
-  // Save data to localStorage
+  // Save local-only data to localStorage
   const saveToStorage = useCallback(<T,>(key: string, data: T) => {
     try {
       localStorage.setItem(key, JSON.stringify(data));
@@ -185,221 +182,339 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  // Initialize data on mount
+  // Fetch vendors from Supabase
+  const fetchVendors = useCallback(async () => {
+    setVendorsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('vendors')
+        .select('*')
+        .order('created_at', { ascending: true });
+      
+      if (error) throw error;
+      
+      const mappedVendors = (data || []).map(mapSupabaseVendor);
+      setVendors(mappedVendors);
+    } catch (error) {
+      console.error('Error fetching vendors:', error);
+    } finally {
+      setVendorsLoading(false);
+    }
+  }, []);
+
+  // Fetch products from Supabase
+  const fetchProducts = useCallback(async () => {
+    setProductsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: true });
+      
+      if (error) throw error;
+      
+      // Get queue from localStorage to mark queued items
+      const storedQueue = loadFromStorage<POQueueItem[]>(STORAGE_KEYS.PO_QUEUE, []);
+      const queuedIds = new Set(storedQueue.map(q => q.productId));
+      
+      const mappedProducts = (data || []).map(p => {
+        const product = mapSupabaseProduct(p);
+        if (queuedIds.has(product.id)) {
+          product.added_to_po_queue = true;
+          product.po_status = 'queued';
+          product.include_in_create_po = false;
+        }
+        return product;
+      });
+      setProducts(mappedProducts);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    } finally {
+      setProductsLoading(false);
+    }
+  }, [loadFromStorage]);
+
+  // Fetch purchase orders from Supabase
+  const fetchPurchaseOrders = useCallback(async () => {
+    setPosLoading(true);
+    try {
+      // First get vendors for name lookup
+      const { data: vendorData } = await supabase.from('vendors').select('*');
+      const vendorList = (vendorData || []).map(mapSupabaseVendor);
+
+      // Then get POs
+      const { data: poData, error: poError } = await supabase
+        .from('purchase_orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (poError) throw poError;
+
+      // Get all PO items
+      const { data: itemsData, error: itemsError } = await supabase
+        .from('purchase_order_items')
+        .select('*');
+      
+      if (itemsError) throw itemsError;
+
+      // Map items to their POs
+      const itemsByPO: Record<string, any[]> = {};
+      (itemsData || []).forEach(item => {
+        if (!itemsByPO[item.po_id]) {
+          itemsByPO[item.po_id] = [];
+        }
+        itemsByPO[item.po_id].push(item);
+      });
+
+      const mappedPOs = (poData || []).map(po => 
+        mapSupabasePO(po, itemsByPO[po.id] || [], vendorList)
+      );
+      
+      setPurchaseOrders(mappedPOs);
+    } catch (error) {
+      console.error('Error fetching purchase orders:', error);
+    } finally {
+      setPosLoading(false);
+    }
+  }, []);
+
+  // Initialize data and set up realtime subscriptions
   useEffect(() => {
-    const storedVendors = loadFromStorage<Vendor[]>(STORAGE_KEYS.VENDORS, []);
-    const storedProducts = loadFromStorage<Product[]>(STORAGE_KEYS.PRODUCTS, []);
-    const storedPOs = loadFromStorage<ExtendedPurchaseOrder[]>(STORAGE_KEYS.PURCHASE_ORDERS, []);
+    // Load local-only data
     const storedQueue = loadFromStorage<POQueueItem[]>(STORAGE_KEYS.PO_QUEUE, []);
     const storedAppUsers = loadFromStorage<AppUser[]>(STORAGE_KEYS.APP_USERS, []);
-    const storedVendorCounter = loadFromStorage<number>(STORAGE_KEYS.VENDOR_COUNTER, 0);
-
-    // Use stored data or initialize with defaults
-    setVendors(storedVendors.length > 0 ? storedVendors : initialVendors);
-    setProducts(storedProducts.length > 0 ? storedProducts : initialProducts);
-    setPurchaseOrders(storedPOs);
     setPoQueue(storedQueue);
     setAppUsers(storedAppUsers);
 
-    // Save initial data if empty
-    if (storedVendors.length === 0) {
-      saveToStorage(STORAGE_KEYS.VENDORS, initialVendors);
-      // Initialize vendor counter based on initial vendors (V001, V002 = counter 2)
-      saveToStorage(STORAGE_KEYS.VENDOR_COUNTER, 2);
-    } else if (storedVendorCounter === 0) {
-      // If vendors exist but counter is 0, calculate counter from existing vendor IDs
-      const maxId = storedVendors.reduce((max, v) => {
-        const match = v.id.match(/V(\d+)/);
-        if (match) {
-          const num = parseInt(match[1], 10);
-          return num > max ? num : max;
-        }
-        return max;
-      }, 0);
-      saveToStorage(STORAGE_KEYS.VENDOR_COUNTER, maxId);
-    }
-    
-    if (storedProducts.length === 0) {
-      saveToStorage(STORAGE_KEYS.PRODUCTS, initialProducts);
-    }
+    // Fetch data from Supabase
+    fetchVendors();
+    fetchProducts();
+    fetchPurchaseOrders();
 
-    setVendorsLoading(false);
-    setProductsLoading(false);
-    setPosLoading(false);
-  }, [loadFromStorage, saveToStorage]);
+    // Set up realtime subscriptions
+    const channels: RealtimeChannel[] = [];
+
+    // Vendors realtime
+    const vendorsChannel = supabase
+      .channel('vendors-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendors' }, () => {
+        console.log('Vendors changed, refreshing...');
+        fetchVendors();
+      })
+      .subscribe();
+    channels.push(vendorsChannel);
+
+    // Products realtime
+    const productsChannel = supabase
+      .channel('products-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
+        console.log('Products changed, refreshing...');
+        fetchProducts();
+      })
+      .subscribe();
+    channels.push(productsChannel);
+
+    // Purchase orders realtime
+    const posChannel = supabase
+      .channel('purchase-orders-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_orders' }, () => {
+        console.log('Purchase orders changed, refreshing...');
+        fetchPurchaseOrders();
+      })
+      .subscribe();
+    channels.push(posChannel);
+
+    // PO items realtime
+    const poItemsChannel = supabase
+      .channel('po-items-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_order_items' }, () => {
+        console.log('PO items changed, refreshing...');
+        fetchPurchaseOrders();
+      })
+      .subscribe();
+    channels.push(poItemsChannel);
+
+    // Cleanup subscriptions on unmount
+    return () => {
+      channels.forEach(channel => {
+        supabase.removeChannel(channel);
+      });
+    };
+  }, [loadFromStorage, fetchVendors, fetchProducts, fetchPurchaseOrders]);
 
   // Refresh functions
   const refreshVendors = useCallback(() => {
-    const data = loadFromStorage<Vendor[]>(STORAGE_KEYS.VENDORS, []);
-    setVendors(data);
-  }, [loadFromStorage]);
+    fetchVendors();
+  }, [fetchVendors]);
 
   const refreshProducts = useCallback(() => {
-    const data = loadFromStorage<Product[]>(STORAGE_KEYS.PRODUCTS, []);
-    setProducts(data);
-  }, [loadFromStorage]);
+    fetchProducts();
+  }, [fetchProducts]);
 
   const refreshPurchaseOrders = useCallback(() => {
-    const data = loadFromStorage<ExtendedPurchaseOrder[]>(STORAGE_KEYS.PURCHASE_ORDERS, []);
-    setPurchaseOrders(data);
-  }, [loadFromStorage]);
+    fetchPurchaseOrders();
+  }, [fetchPurchaseOrders]);
 
   // Product operations
-  // Helper for duplicate detection
-  const isDuplicateProduct = useCallback((name: string, brand: string, vendorId: string, excludeId?: string): boolean => {
-    const normalizedName = name.trim().toLowerCase();
-    const normalizedBrand = (brand || '').trim().toLowerCase();
-    return products.some(p => {
-      if (excludeId && p.id === excludeId) return false;
-      const pName = p.name.trim().toLowerCase();
-      const pBrand = (p.brand || '').trim().toLowerCase();
-      return pName === normalizedName && pBrand === normalizedBrand && p.vendor_id === vendorId;
-    });
-  }, [products]);
-
-  const isDuplicateVendor = useCallback((name: string, excludeId?: string): boolean => {
-    const normalizedName = name.trim().toLowerCase();
-    return vendors.some(v => {
-      if (excludeId && v.id === excludeId) return false;
-      return v.name.trim().toLowerCase() === normalizedName;
-    });
-  }, [vendors]);
-
   const addProduct = useCallback(async (product: Omit<Product, 'id'>) => {
-    // Duplicates are now allowed for Products (no blocking)
-    const newProduct: Product = {
-      ...product,
-      id: 'P' + Date.now() + Math.random().toString(36).substr(2, 9),
-      po_quantity: product.po_quantity || 1,
-      include_in_create_po: product.include_in_create_po ?? true,
-      added_to_po_queue: product.added_to_po_queue ?? false,
-      po_status: product.po_status ?? 'available',
-    };
-    // Use functional update to prevent race conditions
-    setProducts(prev => {
-      const updated = [...prev, newProduct];
-      saveToStorage(STORAGE_KEYS.PRODUCTS, updated);
-      return updated;
+    const { error } = await supabase.from('products').insert({
+      product_name: product.name,
+      brand: product.brand || null,
+      category: product.category || null,
+      vendor_id: product.vendor_id || null,
+      current_stock: product.current_stock ?? 0,
+      reorder_level: product.reorder_level ?? 0,
+      unit: product.unit || 'pcs',
+      default_po_quantity: product.po_quantity ?? 1,
+      include_in_po: product.include_in_create_po ?? true,
     });
-  }, [saveToStorage]);
+    
+    if (error) {
+      console.error('Error adding product:', error);
+      throw error;
+    }
+    // Realtime will handle the refresh
+  }, []);
 
-  // Batch add products for bulk import
   const addProductsBatch = useCallback(async (productsData: Omit<Product, 'id'>[]) => {
-    const newProducts: Product[] = productsData.map((product, idx) => ({
-      ...product,
-      id: 'P' + Date.now() + idx + Math.random().toString(36).substr(2, 9),
-      po_quantity: product.po_quantity || 1,
-      include_in_create_po: product.include_in_create_po ?? true,
-      added_to_po_queue: product.added_to_po_queue ?? false,
-      po_status: product.po_status ?? 'available',
+    const insertData = productsData.map(product => ({
+      product_name: product.name,
+      brand: product.brand || null,
+      category: product.category || null,
+      vendor_id: product.vendor_id || null,
+      current_stock: product.current_stock ?? 0,
+      reorder_level: product.reorder_level ?? 0,
+      unit: product.unit || 'pcs',
+      default_po_quantity: product.po_quantity ?? 1,
+      include_in_po: product.include_in_create_po ?? true,
     }));
+
+    const { error } = await supabase.from('products').insert(insertData);
     
-    setProducts(prev => {
-      const updated = [...prev, ...newProducts];
-      saveToStorage(STORAGE_KEYS.PRODUCTS, updated);
-      return updated;
-    });
-    
-    return newProducts.length;
-  }, [saveToStorage]);
-
-  const updateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
-    const updated = products.map(p => p.id === id ? { ...p, ...updates } : p);
-    setProducts(updated);
-    saveToStorage(STORAGE_KEYS.PRODUCTS, updated);
-  }, [products, saveToStorage]);
-
-  const deleteProduct = useCallback(async (id: string) => {
-    const updated = products.filter(p => p.id !== id);
-    setProducts(updated);
-    saveToStorage(STORAGE_KEYS.PRODUCTS, updated);
-  }, [products, saveToStorage]);
-
-  const deleteProducts = useCallback(async (ids: string[]) => {
-    const updated = products.filter(p => !ids.includes(p.id));
-    setProducts(updated);
-    saveToStorage(STORAGE_KEYS.PRODUCTS, updated);
-  }, [products, saveToStorage]);
-
-  // PO Queue operations
-  const addToPoQueue = useCallback((productId: string, quantity: number) => {
-    // Check if already in queue
-    if (poQueue.some(item => item.productId === productId)) {
-      return; // Already in queue, don't add again
+    if (error) {
+      console.error('Error batch adding products:', error);
+      throw error;
     }
     
-    // Add to queue
+    return productsData.length;
+  }, []);
+
+  const updateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
+    const supabaseUpdates: any = {};
+    if (updates.name !== undefined) supabaseUpdates.product_name = updates.name;
+    if (updates.brand !== undefined) supabaseUpdates.brand = updates.brand;
+    if (updates.category !== undefined) supabaseUpdates.category = updates.category;
+    if (updates.vendor_id !== undefined) supabaseUpdates.vendor_id = updates.vendor_id;
+    if (updates.current_stock !== undefined) supabaseUpdates.current_stock = updates.current_stock;
+    if (updates.reorder_level !== undefined) supabaseUpdates.reorder_level = updates.reorder_level;
+    if (updates.unit !== undefined) supabaseUpdates.unit = updates.unit;
+    if (updates.po_quantity !== undefined) supabaseUpdates.default_po_quantity = updates.po_quantity;
+    if (updates.include_in_create_po !== undefined) supabaseUpdates.include_in_po = updates.include_in_create_po;
+
+    if (Object.keys(supabaseUpdates).length > 0) {
+      const { error } = await supabase
+        .from('products')
+        .update(supabaseUpdates)
+        .eq('id', id);
+      
+      if (error) {
+        console.error('Error updating product:', error);
+        throw error;
+      }
+    }
+
+    // Also update local state for queue-related fields
+    if (updates.added_to_po_queue !== undefined || updates.po_status !== undefined) {
+      setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+    }
+  }, []);
+
+  const deleteProduct = useCallback(async (id: string) => {
+    const { error } = await supabase.from('products').delete().eq('id', id);
+    
+    if (error) {
+      console.error('Error deleting product:', error);
+      throw error;
+    }
+  }, []);
+
+  const deleteProducts = useCallback(async (ids: string[]) => {
+    const { error } = await supabase.from('products').delete().in('id', ids);
+    
+    if (error) {
+      console.error('Error deleting products:', error);
+      throw error;
+    }
+  }, []);
+
+  // PO Queue operations (local only - per user)
+  const addToPoQueue = useCallback((productId: string, quantity: number) => {
+    if (poQueue.some(item => item.productId === productId)) {
+      return;
+    }
+    
     const newQueue = [...poQueue, { productId, quantity, addedAt: new Date().toISOString() }];
     setPoQueue(newQueue);
     saveToStorage(STORAGE_KEYS.PO_QUEUE, newQueue);
     
-    // Mark product as queued
-    const updatedProducts = products.map(p => 
+    // Update local product state
+    setProducts(prev => prev.map(p => 
       p.id === productId 
         ? { ...p, added_to_po_queue: true, include_in_create_po: false, po_quantity: quantity, po_status: 'queued' as const } 
         : p
-    );
-    setProducts(updatedProducts);
-    saveToStorage(STORAGE_KEYS.PRODUCTS, updatedProducts);
-  }, [poQueue, products, saveToStorage]);
+    ));
+  }, [poQueue, saveToStorage]);
 
   const removeFromPoQueue = useCallback((productId: string) => {
     const newQueue = poQueue.filter(item => item.productId !== productId);
     setPoQueue(newQueue);
     saveToStorage(STORAGE_KEYS.PO_QUEUE, newQueue);
     
-    // Restore product to available status
-    const updatedProducts = products.map(p => 
+    setProducts(prev => prev.map(p => 
       p.id === productId 
         ? { ...p, added_to_po_queue: false, include_in_create_po: true, po_status: 'available' as const } 
         : p
-    );
-    setProducts(updatedProducts);
-    saveToStorage(STORAGE_KEYS.PRODUCTS, updatedProducts);
-  }, [poQueue, products, saveToStorage]);
+    ));
+  }, [poQueue, saveToStorage]);
 
   const clearPoQueue = useCallback(() => {
+    const queuedIds = poQueue.map(item => item.productId);
     setPoQueue([]);
     saveToStorage(STORAGE_KEYS.PO_QUEUE, []);
-  }, [saveToStorage]);
-
-  // Get next sequential vendor ID
-  const getNextVendorId = useCallback((): string => {
-    const currentCounter = loadFromStorage<number>(STORAGE_KEYS.VENDOR_COUNTER, 0);
-    const nextCounter = currentCounter + 1;
-    saveToStorage(STORAGE_KEYS.VENDOR_COUNTER, nextCounter);
-    return `V${String(nextCounter).padStart(3, '0')}`;
-  }, [loadFromStorage, saveToStorage]);
+    
+    setProducts(prev => prev.map(p => 
+      queuedIds.includes(p.id)
+        ? { ...p, added_to_po_queue: false, include_in_create_po: true, po_status: 'available' as const }
+        : p
+    ));
+  }, [poQueue, saveToStorage]);
 
   // Vendor operations
   const addVendor = useCallback(async (vendor: Omit<Vendor, 'id'>) => {
-    // Check for duplicate - need to read current state
-    const currentVendors = loadFromStorage<Vendor[]>(STORAGE_KEYS.VENDORS, []);
+    // Check for duplicate
     const normalizedName = vendor.name.trim().toLowerCase();
-    const isDuplicate = currentVendors.some(v => v.name.trim().toLowerCase() === normalizedName);
+    const isDuplicate = vendors.some(v => v.name.trim().toLowerCase() === normalizedName);
     
     if (isDuplicate) {
       throw new Error('A vendor with the same name already exists.');
     }
 
-    const newVendor: Vendor = {
-      ...vendor,
-      id: getNextVendorId(),
-    };
-    
-    // Use functional update to prevent race conditions
-    setVendors(prev => {
-      const updated = [...prev, newVendor];
-      saveToStorage(STORAGE_KEYS.VENDORS, updated);
-      return updated;
+    const { error } = await supabase.from('vendors').insert({
+      vendor_name: vendor.name,
+      gst_number: vendor.gst || null,
+      address: vendor.address || null,
+      contact_person_name: vendor.contact_person_name || null,
+      contact_person_email: vendor.contact_person_email || null,
     });
-  }, [saveToStorage, loadFromStorage, getNextVendorId]);
+    
+    if (error) {
+      console.error('Error adding vendor:', error);
+      throw error;
+    }
+  }, [vendors]);
 
-  // Batch add vendors for bulk import (with duplicate checking)
   const addVendorsBatch = useCallback(async (vendorsData: Omit<Vendor, 'id'>[]) => {
-    // Get current vendors from storage to check duplicates
-    const currentVendors = loadFromStorage<Vendor[]>(STORAGE_KEYS.VENDORS, []);
-    const existingNames = new Set(currentVendors.map(v => v.name.trim().toLowerCase()));
+    const existingNames = new Set(vendors.map(v => v.name.trim().toLowerCase()));
     
     const validVendors: Omit<Vendor, 'id'>[] = [];
     const duplicates: string[] = [];
@@ -408,7 +523,6 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     for (const vendor of vendorsData) {
       const normalizedName = vendor.name.trim().toLowerCase();
       
-      // Skip if already exists in DB or in this batch
       if (existingNames.has(normalizedName) || processedNames.has(normalizedName)) {
         duplicates.push(vendor.name);
         continue;
@@ -418,48 +532,59 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       processedNames.add(normalizedName);
     }
     
-    // Get current counter and generate sequential IDs
-    let currentCounter = loadFromStorage<number>(STORAGE_KEYS.VENDOR_COUNTER, 0);
-    
-    const newVendors: Vendor[] = validVendors.map((vendor) => {
-      currentCounter++;
-      return {
-        ...vendor,
-        id: `V${String(currentCounter).padStart(3, '0')}`,
-      };
-    });
-    
-    // Save the updated counter
-    if (newVendors.length > 0) {
-      saveToStorage(STORAGE_KEYS.VENDOR_COUNTER, currentCounter);
+    if (validVendors.length > 0) {
+      const insertData = validVendors.map(vendor => ({
+        vendor_name: vendor.name,
+        gst_number: vendor.gst || null,
+        address: vendor.address || null,
+        contact_person_name: vendor.contact_person_name || null,
+        contact_person_email: vendor.contact_person_email || null,
+      }));
+
+      const { error } = await supabase.from('vendors').insert(insertData);
       
-      setVendors(prev => {
-        const updated = [...prev, ...newVendors];
-        saveToStorage(STORAGE_KEYS.VENDORS, updated);
-        return updated;
-      });
+      if (error) {
+        console.error('Error batch adding vendors:', error);
+        throw error;
+      }
     }
     
-    return { added: newVendors.length, duplicates };
-  }, [saveToStorage, loadFromStorage]);
+    return { added: validVendors.length, duplicates };
+  }, [vendors]);
 
   const updateVendor = useCallback(async (id: string, updates: Partial<Vendor>) => {
-    const updated = vendors.map(v => v.id === id ? { ...v, ...updates } : v);
-    setVendors(updated);
-    saveToStorage(STORAGE_KEYS.VENDORS, updated);
-  }, [vendors, saveToStorage]);
+    const supabaseUpdates: any = {};
+    if (updates.name !== undefined) supabaseUpdates.vendor_name = updates.name;
+    if (updates.gst !== undefined) supabaseUpdates.gst_number = updates.gst;
+    if (updates.address !== undefined) supabaseUpdates.address = updates.address;
+    if (updates.contact_person_name !== undefined) supabaseUpdates.contact_person_name = updates.contact_person_name;
+    if (updates.contact_person_email !== undefined) supabaseUpdates.contact_person_email = updates.contact_person_email;
+
+    const { error } = await supabase.from('vendors').update(supabaseUpdates).eq('id', id);
+    
+    if (error) {
+      console.error('Error updating vendor:', error);
+      throw error;
+    }
+  }, []);
 
   const deleteVendor = useCallback(async (id: string) => {
-    const updated = vendors.filter(v => v.id !== id);
-    setVendors(updated);
-    saveToStorage(STORAGE_KEYS.VENDORS, updated);
-  }, [vendors, saveToStorage]);
+    const { error } = await supabase.from('vendors').delete().eq('id', id);
+    
+    if (error) {
+      console.error('Error deleting vendor:', error);
+      throw error;
+    }
+  }, []);
 
   const deleteVendors = useCallback(async (ids: string[]) => {
-    const updated = vendors.filter(v => !ids.includes(v.id));
-    setVendors(updated);
-    saveToStorage(STORAGE_KEYS.VENDORS, updated);
-  }, [vendors, saveToStorage]);
+    const { error } = await supabase.from('vendors').delete().in('id', ids);
+    
+    if (error) {
+      console.error('Error deleting vendors:', error);
+      throw error;
+    }
+  }, []);
 
   // Purchase Order operations
   const getNextPONumber = useCallback(() => {
@@ -481,48 +606,53 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     if (!user) throw new Error('Must be logged in to create PO');
 
     const poNumber = getNextPONumber();
-    const vendor = vendors.find(v => v.id === vendorId);
 
-    const newPO: ExtendedPurchaseOrder = {
-      id: 'PO' + Date.now(),
-      po_number: poNumber,
-      vendor_id: vendorId,
-      date: new Date().toISOString().split('T')[0],
-      total_items: items.length,
-      status: 'created',
-      items: items.map((item, idx) => ({
-        id: `item-${Date.now()}-${idx}`,
-        po_id: '',
-        product_id: item.productId,
-        quantity: item.quantity,
-      })),
-      created_by: user.name,
-      vendorName: vendor?.name,
-    };
+    // Create PO
+    const { data: poData, error: poError } = await supabase
+      .from('purchase_orders')
+      .insert({
+        po_number: poNumber,
+        vendor_id: vendorId,
+        status: 'created',
+        created_by: user.name,
+      })
+      .select()
+      .single();
+    
+    if (poError) {
+      console.error('Error creating PO:', poError);
+      throw poError;
+    }
 
-    // Update items with correct PO ID
-    newPO.items = newPO.items.map(item => ({ ...item, po_id: newPO.id }));
+    // Create PO items
+    const itemsToInsert = items.map(item => ({
+      po_id: poData.id,
+      product_id: item.productId,
+      quantity: item.quantity,
+    }));
 
-    const updatedPOs = [...purchaseOrders, newPO];
-    setPurchaseOrders(updatedPOs);
-    saveToStorage(STORAGE_KEYS.PURCHASE_ORDERS, updatedPOs);
+    const { error: itemsError } = await supabase
+      .from('purchase_order_items')
+      .insert(itemsToInsert);
+    
+    if (itemsError) {
+      console.error('Error creating PO items:', itemsError);
+      throw itemsError;
+    }
 
-    // Mark products as po_created (they should NOT return to Products list)
-    const updatedProducts = products.map(p => {
-      if (items.some(item => item.productId === p.id)) {
-        return { ...p, include_in_create_po: false, added_to_po_queue: false, po_status: 'po_created' as const };
-      }
-      return p;
-    });
-    setProducts(updatedProducts);
-    saveToStorage(STORAGE_KEYS.PRODUCTS, updatedProducts);
-  }, [user, getNextPONumber, vendors, purchaseOrders, products, saveToStorage]);
+    // Mark products as included in PO (hide from products list)
+    const productIds = items.map(item => item.productId);
+    await supabase
+      .from('products')
+      .update({ include_in_po: false })
+      .in('id', productIds);
+
+  }, [user, getNextPONumber]);
 
   const generatePOFromQueue = useCallback(async (selectedProductIds?: string[]) => {
     if (!user) throw new Error('Must be logged in to create PO');
     if (poQueue.length === 0) throw new Error('No items in queue');
 
-    // If specific items selected, only process those
     const itemsToProcess = selectedProductIds 
       ? poQueue.filter(item => selectedProductIds.includes(item.productId))
       : poQueue;
@@ -551,68 +681,71 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       await addPurchaseOrder(vendorId, items);
     }
 
-    // Remove only processed items from queue (not all)
+    // Remove processed items from queue
     if (selectedProductIds) {
       const newQueue = poQueue.filter(item => !selectedProductIds.includes(item.productId));
       setPoQueue(newQueue);
       saveToStorage(STORAGE_KEYS.PO_QUEUE, newQueue);
     } else {
-      // Clear the entire queue if no specific selection
-      clearPoQueue();
+      setPoQueue([]);
+      saveToStorage(STORAGE_KEYS.PO_QUEUE, []);
     }
-  }, [user, poQueue, products, addPurchaseOrder, clearPoQueue, saveToStorage]);
+  }, [user, poQueue, products, addPurchaseOrder, saveToStorage]);
 
   const approvePurchaseOrder = useCallback(async (id: string) => {
     if (!user) throw new Error('Must be logged in to approve PO');
 
-    const updated = purchaseOrders.map(po => 
-      po.id === id 
-        ? { 
-            ...po, 
-            status: 'approved' as POStatus, 
-            approved_by: user.name,
-            approved_at: new Date().toISOString(),
-          } 
-        : po
-    );
-    setPurchaseOrders(updated);
-    saveToStorage(STORAGE_KEYS.PURCHASE_ORDERS, updated);
-  }, [user, purchaseOrders, saveToStorage]);
+    const { error } = await supabase
+      .from('purchase_orders')
+      .update({
+        status: 'approved',
+        approved_by: user.name,
+        approved_at: new Date().toISOString(),
+      })
+      .eq('id', id);
+    
+    if (error) {
+      console.error('Error approving PO:', error);
+      throw error;
+    }
+  }, [user]);
 
   const approvePurchaseOrders = useCallback(async (ids: string[]) => {
     if (!user) throw new Error('Must be logged in to approve POs');
 
-    const updated = purchaseOrders.map(po => 
-      ids.includes(po.id)
-        ? { 
-            ...po, 
-            status: 'approved' as POStatus, 
-            approved_by: user.name,
-            approved_at: new Date().toISOString(),
-          } 
-        : po
-    );
-    setPurchaseOrders(updated);
-    saveToStorage(STORAGE_KEYS.PURCHASE_ORDERS, updated);
-  }, [user, purchaseOrders, saveToStorage]);
+    const { error } = await supabase
+      .from('purchase_orders')
+      .update({
+        status: 'approved',
+        approved_by: user.name,
+        approved_at: new Date().toISOString(),
+      })
+      .in('id', ids);
+    
+    if (error) {
+      console.error('Error bulk approving POs:', error);
+      throw error;
+    }
+  }, [user]);
 
   const rejectPurchaseOrder = useCallback(async (id: string, reason?: string) => {
     if (!user) throw new Error('Must be logged in to reject PO');
 
-    const updated = purchaseOrders.map(po => 
-      po.id === id 
-        ? { 
-            ...po, 
-            status: 'rejected' as POStatus, 
-            rejected_by: user.name,
-            rejected_at: new Date().toISOString(),
-            rejection_reason: reason || '',
-          } 
-        : po
-    );
-    setPurchaseOrders(updated);
-    saveToStorage(STORAGE_KEYS.PURCHASE_ORDERS, updated);
-  }, [user, purchaseOrders, saveToStorage]);
+    const { error } = await supabase
+      .from('purchase_orders')
+      .update({
+        status: 'rejected',
+        rejected_by: user.name,
+        rejected_at: new Date().toISOString(),
+        rejection_reason: reason || '',
+      })
+      .eq('id', id);
+    
+    if (error) {
+      console.error('Error rejecting PO:', error);
+      throw error;
+    }
+  }, [user]);
 
   // Lookup helpers
   const getVendorById = useCallback((id: string) => {
@@ -624,22 +757,18 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
   }, [products]);
 
   // Download log
-  const addDownloadLog = useCallback((poId: string, location: string) => {
+  const addDownloadLog = useCallback(async (poId: string, location: string) => {
     if (!user) return;
     
-    const logs = loadFromStorage<DownloadLog[]>(STORAGE_KEYS.DOWNLOAD_LOGS, []);
-    const newLog: DownloadLog = {
-      id: 'DL' + Date.now(),
+    await supabase.from('po_download_logs').insert({
       po_id: poId,
       location,
       downloaded_at: new Date().toISOString(),
       downloaded_by: user.name,
-    };
-    logs.push(newLog);
-    saveToStorage(STORAGE_KEYS.DOWNLOAD_LOGS, logs);
-  }, [user, loadFromStorage, saveToStorage]);
+    });
+  }, [user]);
 
-  // App User management
+  // App User management (local only for now)
   const addAppUser = useCallback((userData: Omit<AppUser, 'id' | 'created_at'>) => {
     const newUser: AppUser = {
       ...userData,
