@@ -31,7 +31,7 @@ const Vendors = () => {
   const canBulkDelete = hasPermission('bulk_delete_vendors');
   const canAddSingle = hasPermission('add_single_vendor');
 
-  const { vendors, addVendor, updateVendor, deleteVendor, deleteVendors, refreshVendors } = useDataStore();
+  const { vendors, addVendor, addVendorsBatch, updateVendor, deleteVendor, deleteVendors, refreshVendors } = useDataStore();
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -230,6 +230,8 @@ const Vendors = () => {
       const text = e.target?.result as string;
       const lines = text.split('\n').filter(line => line.trim());
       
+      console.log('[Vendors Upload] Total lines (including header):', lines.length);
+      
       if (lines.length < 2) {
         toast({
           title: "Error",
@@ -246,53 +248,71 @@ const Vendors = () => {
       const contactNameIndex = headers.findIndex(h => h.includes('contact') && h.includes('name'));
       const contactEmailIndex = headers.findIndex(h => h.includes('email'));
 
-      let importedCount = 0;
-      const skippedDuplicates: string[] = [];
+      // Collect all valid vendors to import
+      const vendorsToImport: Omit<Vendor, 'id'>[] = [];
+      let skippedEmpty = 0;
+      
+      console.log('[Vendors Upload] Processing', lines.length - 1, 'data rows');
       
       for (let i = 1; i < lines.length; i++) {
         // Handle CSV with quoted fields
         const values = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)?.map(v => v.replace(/^"|"$/g, '').trim()) || lines[i].split(',').map(v => v.trim());
         
         const name = nameIndex >= 0 ? values[nameIndex] : '';
+        
+        // Skip rows without vendor name
+        if (!name || !name.trim()) {
+          console.log('[Vendors Upload] Skipping row', i, '- no vendor name');
+          skippedEmpty++;
+          continue;
+        }
+        
         const address = addressIndex >= 0 ? values[addressIndex] : '';
         const gst = gstIndex >= 0 ? values[gstIndex] : '';
         const contactName = contactNameIndex >= 0 ? values[contactNameIndex] : '';
         const contactEmail = contactEmailIndex >= 0 ? values[contactEmailIndex] : '';
         
-        if (name) {
-          try {
-            await addVendor({
-              name,
-              address,
-              gst,
-              phone: '',
-              contact_person_name: contactName,
-              contact_person_email: contactEmail,
-            });
-            importedCount++;
-          } catch (error: any) {
-            if (error.message?.includes('already exists')) {
-              skippedDuplicates.push(name);
-            }
-          }
-        }
+        vendorsToImport.push({
+          name: name.trim(),
+          address: address || '',
+          gst: gst || '',
+          phone: '',
+          contact_person_name: contactName || '',
+          contact_person_email: contactEmail || '',
+        });
       }
       
-      if (skippedDuplicates.length > 0) {
-        const displayDuplicates = skippedDuplicates.slice(0, 10);
+      console.log('[Vendors Upload] Vendors to process:', vendorsToImport.length);
+      console.log('[Vendors Upload] Skipped empty rows:', skippedEmpty);
+      
+      if (vendorsToImport.length === 0) {
+        toast({
+          title: "No Vendors Imported",
+          description: `All ${skippedEmpty} rows were invalid or empty.`,
+          variant: "destructive",
+        });
+        event.target.value = '';
+        return;
+      }
+      
+      // Batch import with duplicate detection
+      const result = await addVendorsBatch(vendorsToImport);
+      
+      console.log('[Vendors Upload] Added:', result.added, 'Duplicates:', result.duplicates.length);
+      
+      if (result.duplicates.length > 0) {
+        const displayDuplicates = result.duplicates.slice(0, 10);
         toast({
           title: "Import Complete with Duplicates",
-          description: `Added: ${importedCount}. Skipped duplicates: ${skippedDuplicates.length}${skippedDuplicates.length > 10 ? ` (showing first 10)` : ''}: ${displayDuplicates.join(', ')}`,
+          description: `Imported ${result.added} items. Skipped ${result.duplicates.length} duplicates${result.duplicates.length > 10 ? ` (showing first 10)` : ''}: ${displayDuplicates.join(', ')}`,
           variant: "default",
         });
       } else {
         toast({
           title: "Import Complete",
-          description: `${importedCount} vendor(s) imported successfully.`,
+          description: `Imported ${result.added} items. Skipped ${skippedEmpty} rows.`,
         });
       }
-      
-      await refreshVendors();
     };
     reader.readAsText(file);
     
