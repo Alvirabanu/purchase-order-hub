@@ -1,26 +1,13 @@
-import { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useDataStore } from '@/contexts/DataStoreContext';
-import { AppLayout } from '@/components/layout/AppLayout';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useDataStore } from "@/contexts/DataStoreContext";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -29,35 +16,33 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { UserRole } from '@/types';
-import { UserPlus, Trash2, Shield, Users } from 'lucide-react';
-import { toast } from 'sonner';
+} from "@/components/ui/dialog";
+import { UserRole } from "@/types";
+import { UserPlus, Trash2, Shield, Users } from "lucide-react";
+import { toast } from "sonner";
 
 const AccessManager = () => {
   const { user } = useAuth();
   const { appUsers, addAppUser, deleteAppUser } = useDataStore();
-  
+
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newUser, setNewUser] = useState({
-    name: '',
-    username: '',
-    password: '',
-    role: '' as UserRole | '',
+    name: "",
+    username: "",
+    password: "",
+    role: "" as UserRole | "",
   });
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   // Only Main Admin can access this page
-  if (user?.role !== 'main_admin') {
+  if (user?.role !== "main_admin") {
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-full">
           <Card className="w-full max-w-md">
             <CardHeader>
               <CardTitle className="text-destructive">Access Denied</CardTitle>
-              <CardDescription>
-                Only Main Admin can access the Access Manager.
-              </CardDescription>
+              <CardDescription>Only Main Admin can access the Access Manager.</CardDescription>
             </CardHeader>
           </Card>
         </div>
@@ -67,52 +52,54 @@ const AccessManager = () => {
 
   const getRoleLabel = (role: UserRole) => {
     const labels: Record<UserRole, string> = {
-      main_admin: 'Main Admin',
-      po_creator: 'PO Creator',
-      approval_admin: 'Approval Admin',
+      main_admin: "Main Admin",
+      po_creator: "PO Creator",
+      approval_admin: "Approval Admin",
     };
     return labels[role];
   };
 
   const getRoleColor = (role: UserRole) => {
     switch (role) {
-      case 'main_admin': return 'bg-primary text-primary-foreground';
-      case 'po_creator': return 'bg-green-500 text-white';
-      case 'approval_admin': return 'bg-amber-500 text-white';
-      default: return 'bg-secondary';
+      case "main_admin":
+        return "bg-primary text-primary-foreground";
+      case "po_creator":
+        return "bg-green-500 text-white";
+      case "approval_admin":
+        return "bg-amber-500 text-white";
+      default:
+        return "bg-secondary";
     }
   };
 
   const handleAddUser = () => {
     if (!newUser.name.trim()) {
-      toast.error('Please enter a name');
+      toast.error("Please enter a name");
       return;
     }
     if (!newUser.username.trim()) {
-      toast.error('Please enter a username');
+      toast.error("Please enter a username");
       return;
     }
     if (!newUser.password.trim()) {
-      toast.error('Please enter a password');
+      toast.error("Please enter a password");
       return;
     }
     if (!newUser.role) {
-      toast.error('Please select a role');
+      toast.error("Please select a role");
       return;
     }
 
     // Check if username already exists
-    const usernameExists = appUsers.some(
-      u => u.username.toLowerCase() === newUser.username.trim().toLowerCase()
-    );
+    const usernameExists = appUsers.some((u) => u.username.toLowerCase() === newUser.username.trim().toLowerCase());
     if (usernameExists) {
-      toast.error('Username already exists');
+      toast.error("Username already exists");
       return;
     }
 
     // Check if trying to use admin username
-    if (newUser.username.trim().toLowerCase() === 'thofik') {
-      toast.error('This username is reserved for Main Admin');
+    if (newUser.username.trim().toLowerCase() === "thofk") {
+      toast.error("This username is reserved for Main Admin");
       return;
     }
 
@@ -124,12 +111,12 @@ const AccessManager = () => {
     });
 
     toast.success(`User "${newUser.name}" created successfully`);
-    setNewUser({ name: '', username: '', password: '', role: '' });
+    setNewUser({ name: "", username: "", password: "", role: "" });
     setIsAddDialogOpen(false);
   };
 
   const handleDeleteUser = (id: string) => {
-    const userToDelete = appUsers.find(u => u.id === id);
+    const userToDelete = appUsers.find((u) => u.id === id);
     if (userToDelete) {
       deleteAppUser(id);
       toast.success(`User "${userToDelete.name}" deleted`);
@@ -138,7 +125,7 @@ const AccessManager = () => {
   };
 
   // Filter out main_admin users from the list (they can't be managed here)
-  const managedUsers = appUsers.filter(u => u.role !== 'main_admin');
+  const managedUsers = appUsers.filter((u) => u.role !== "main_admin");
 
   return (
     <AppLayout>
@@ -149,11 +136,9 @@ const AccessManager = () => {
               <Shield className="h-8 w-8" />
               Access Manager
             </h1>
-            <p className="text-muted-foreground mt-1">
-              Manage user accounts for PO Creator and Approval Admin roles
-            </p>
+            <p className="text-muted-foreground mt-1">Manage user accounts for PO Creator and Approval Admin roles</p>
           </div>
-          
+
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2">
@@ -164,11 +149,9 @@ const AccessManager = () => {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create New User</DialogTitle>
-                <DialogDescription>
-                  Add a new user account for PO Creator or Approval Admin role.
-                </DialogDescription>
+                <DialogDescription>Add a new user account for PO Creator or Approval Admin role.</DialogDescription>
               </DialogHeader>
-              
+
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name</Label>
@@ -176,20 +159,20 @@ const AccessManager = () => {
                     id="name"
                     placeholder="Enter full name"
                     value={newUser.name}
-                    onChange={(e) => setNewUser(prev => ({ ...prev, name: e.target.value }))}
+                    onChange={(e) => setNewUser((prev) => ({ ...prev, name: e.target.value }))}
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="username">Username</Label>
                   <Input
                     id="username"
                     placeholder="Enter username"
                     value={newUser.username}
-                    onChange={(e) => setNewUser(prev => ({ ...prev, username: e.target.value }))}
+                    onChange={(e) => setNewUser((prev) => ({ ...prev, username: e.target.value }))}
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
                   <Input
@@ -197,15 +180,15 @@ const AccessManager = () => {
                     type="password"
                     placeholder="Enter password"
                     value={newUser.password}
-                    onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))}
+                    onChange={(e) => setNewUser((prev) => ({ ...prev, password: e.target.value }))}
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="role">Role</Label>
-                  <Select 
-                    value={newUser.role} 
-                    onValueChange={(value: UserRole) => setNewUser(prev => ({ ...prev, role: value }))}
+                  <Select
+                    value={newUser.role}
+                    onValueChange={(value: UserRole) => setNewUser((prev) => ({ ...prev, role: value }))}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select a role" />
@@ -227,14 +210,12 @@ const AccessManager = () => {
                   </Select>
                 </div>
               </div>
-              
+
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleAddUser}>
-                  Create User
-                </Button>
+                <Button onClick={handleAddUser}>Create User</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -244,9 +225,7 @@ const AccessManager = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Users
-              </CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Users</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{managedUsers.length}</div>
@@ -254,25 +233,21 @@ const AccessManager = () => {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                PO Creators
-              </CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">PO Creators</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">
-                {managedUsers.filter(u => u.role === 'po_creator').length}
+                {managedUsers.filter((u) => u.role === "po_creator").length}
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Approval Admins
-              </CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Approval Admins</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-amber-600">
-                {managedUsers.filter(u => u.role === 'approval_admin').length}
+                {managedUsers.filter((u) => u.role === "approval_admin").length}
               </div>
             </CardContent>
           </Card>
@@ -285,9 +260,7 @@ const AccessManager = () => {
               <Users className="h-5 w-5" />
               User Accounts
             </CardTitle>
-            <CardDescription>
-              Manage user credentials for system access
-            </CardDescription>
+            <CardDescription>Manage user credentials for system access</CardDescription>
           </CardHeader>
           <CardContent>
             {managedUsers.length === 0 ? (
@@ -321,8 +294,8 @@ const AccessManager = () => {
                         {new Date(appUser.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Dialog 
-                          open={deleteConfirmId === appUser.id} 
+                        <Dialog
+                          open={deleteConfirmId === appUser.id}
                           onOpenChange={(open) => !open && setDeleteConfirmId(null)}
                         >
                           <DialogTrigger asChild>
@@ -346,10 +319,7 @@ const AccessManager = () => {
                               <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>
                                 Cancel
                               </Button>
-                              <Button 
-                                variant="destructive" 
-                                onClick={() => handleDeleteUser(appUser.id)}
-                              >
+                              <Button variant="destructive" onClick={() => handleDeleteUser(appUser.id)}>
                                 Delete
                               </Button>
                             </DialogFooter>
