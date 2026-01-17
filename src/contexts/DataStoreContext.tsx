@@ -20,6 +20,7 @@ const STORAGE_KEYS = {
   DOWNLOAD_LOGS: 'po_manager_download_logs',
   PO_QUEUE: 'po_manager_po_queue',
   APP_USERS: 'po_manager_app_users',
+  VENDOR_COUNTER: 'po_manager_vendor_counter',
 };
 
 // Extended PO type with additional tracking fields
@@ -191,6 +192,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     const storedPOs = loadFromStorage<ExtendedPurchaseOrder[]>(STORAGE_KEYS.PURCHASE_ORDERS, []);
     const storedQueue = loadFromStorage<POQueueItem[]>(STORAGE_KEYS.PO_QUEUE, []);
     const storedAppUsers = loadFromStorage<AppUser[]>(STORAGE_KEYS.APP_USERS, []);
+    const storedVendorCounter = loadFromStorage<number>(STORAGE_KEYS.VENDOR_COUNTER, 0);
 
     // Use stored data or initialize with defaults
     setVendors(storedVendors.length > 0 ? storedVendors : initialVendors);
@@ -202,7 +204,21 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     // Save initial data if empty
     if (storedVendors.length === 0) {
       saveToStorage(STORAGE_KEYS.VENDORS, initialVendors);
+      // Initialize vendor counter based on initial vendors (V001, V002 = counter 2)
+      saveToStorage(STORAGE_KEYS.VENDOR_COUNTER, 2);
+    } else if (storedVendorCounter === 0) {
+      // If vendors exist but counter is 0, calculate counter from existing vendor IDs
+      const maxId = storedVendors.reduce((max, v) => {
+        const match = v.id.match(/V(\d+)/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          return num > max ? num : max;
+        }
+        return max;
+      }, 0);
+      saveToStorage(STORAGE_KEYS.VENDOR_COUNTER, maxId);
     }
+    
     if (storedProducts.length === 0) {
       saveToStorage(STORAGE_KEYS.PRODUCTS, initialProducts);
     }
@@ -347,6 +363,14 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     saveToStorage(STORAGE_KEYS.PO_QUEUE, []);
   }, [saveToStorage]);
 
+  // Get next sequential vendor ID
+  const getNextVendorId = useCallback((): string => {
+    const currentCounter = loadFromStorage<number>(STORAGE_KEYS.VENDOR_COUNTER, 0);
+    const nextCounter = currentCounter + 1;
+    saveToStorage(STORAGE_KEYS.VENDOR_COUNTER, nextCounter);
+    return `V${String(nextCounter).padStart(3, '0')}`;
+  }, [loadFromStorage, saveToStorage]);
+
   // Vendor operations
   const addVendor = useCallback(async (vendor: Omit<Vendor, 'id'>) => {
     // Check for duplicate - need to read current state
@@ -360,7 +384,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
 
     const newVendor: Vendor = {
       ...vendor,
-      id: 'V' + Date.now() + Math.random().toString(36).substr(2, 9),
+      id: getNextVendorId(),
     };
     
     // Use functional update to prevent race conditions
@@ -369,7 +393,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       saveToStorage(STORAGE_KEYS.VENDORS, updated);
       return updated;
     });
-  }, [saveToStorage, loadFromStorage]);
+  }, [saveToStorage, loadFromStorage, getNextVendorId]);
 
   // Batch add vendors for bulk import (with duplicate checking)
   const addVendorsBatch = useCallback(async (vendorsData: Omit<Vendor, 'id'>[]) => {
@@ -394,12 +418,21 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       processedNames.add(normalizedName);
     }
     
-    const newVendors: Vendor[] = validVendors.map((vendor, idx) => ({
-      ...vendor,
-      id: 'V' + Date.now() + idx + Math.random().toString(36).substr(2, 9),
-    }));
+    // Get current counter and generate sequential IDs
+    let currentCounter = loadFromStorage<number>(STORAGE_KEYS.VENDOR_COUNTER, 0);
     
+    const newVendors: Vendor[] = validVendors.map((vendor) => {
+      currentCounter++;
+      return {
+        ...vendor,
+        id: `V${String(currentCounter).padStart(3, '0')}`,
+      };
+    });
+    
+    // Save the updated counter
     if (newVendors.length > 0) {
+      saveToStorage(STORAGE_KEYS.VENDOR_COUNTER, currentCounter);
+      
       setVendors(prev => {
         const updated = [...prev, ...newVendors];
         saveToStorage(STORAGE_KEYS.VENDORS, updated);
