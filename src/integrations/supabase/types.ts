@@ -236,8 +236,10 @@ export type Database = {
           contact_person_email: string | null
           contact_person_name: string | null
           created_at: string | null
+          display_id: string | null
           gst_number: string | null
           id: string
+          phone: string | null
           updated_at: string | null
           vendor_name: string
         }
@@ -246,8 +248,10 @@ export type Database = {
           contact_person_email?: string | null
           contact_person_name?: string | null
           created_at?: string | null
+          display_id?: string | null
           gst_number?: string | null
           id?: string
+          phone?: string | null
           updated_at?: string | null
           vendor_name: string
         }
@@ -256,8 +260,10 @@ export type Database = {
           contact_person_email?: string | null
           contact_person_name?: string | null
           created_at?: string | null
+          display_id?: string | null
           gst_number?: string | null
           id?: string
+          phone?: string | null
           updated_at?: string | null
           vendor_name?: string
         }
