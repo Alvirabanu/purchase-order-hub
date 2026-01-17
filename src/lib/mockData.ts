@@ -51,7 +51,8 @@ export const mockProducts: Product[] = [
     unit: 'pcs',
     po_quantity: 100,
     include_in_create_po: true,
-    added_to_po_queue: false
+    added_to_po_queue: false,
+    po_status: 'available'
   },
   {
     id: '2',
@@ -64,7 +65,8 @@ export const mockProducts: Product[] = [
     unit: 'pcs',
     po_quantity: 50,
     include_in_create_po: true,
-    added_to_po_queue: false
+    added_to_po_queue: false,
+    po_status: 'available'
   },
   {
     id: '3',
@@ -77,7 +79,8 @@ export const mockProducts: Product[] = [
     unit: 'pcs',
     po_quantity: 30,
     include_in_create_po: true,
-    added_to_po_queue: false
+    added_to_po_queue: false,
+    po_status: 'available'
   },
   {
     id: '4',
@@ -90,7 +93,8 @@ export const mockProducts: Product[] = [
     unit: 'pcs',
     po_quantity: 150,
     include_in_create_po: true,
-    added_to_po_queue: false
+    added_to_po_queue: false,
+    po_status: 'available'
   },
   {
     id: '5',
@@ -103,7 +107,8 @@ export const mockProducts: Product[] = [
     unit: 'boxes',
     po_quantity: 100,
     include_in_create_po: false,
-    added_to_po_queue: false
+    added_to_po_queue: false,
+    po_status: 'available'
   },
   {
     id: '6',
@@ -116,7 +121,8 @@ export const mockProducts: Product[] = [
     unit: 'pcs',
     po_quantity: 5,
     include_in_create_po: true,
-    added_to_po_queue: false
+    added_to_po_queue: false,
+    po_status: 'available'
   }
 ];
 

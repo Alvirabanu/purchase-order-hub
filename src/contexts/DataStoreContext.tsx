@@ -113,7 +113,8 @@ const initialProducts: Product[] = [
     unit: 'pcs',
     po_quantity: 1,
     include_in_create_po: true,
-    added_to_po_queue: false
+    added_to_po_queue: false,
+    po_status: 'available'
   },
   {
     id: '2',
@@ -126,7 +127,8 @@ const initialProducts: Product[] = [
     unit: 'pcs',
     po_quantity: 1,
     include_in_create_po: true,
-    added_to_po_queue: false
+    added_to_po_queue: false,
+    po_status: 'available'
   },
 ];
 
@@ -205,18 +207,44 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
   }, [loadFromStorage]);
 
   // Product operations
+  // Helper for duplicate detection
+  const isDuplicateProduct = useCallback((name: string, brand: string, vendorId: string, excludeId?: string): boolean => {
+    const normalizedName = name.trim().toLowerCase();
+    const normalizedBrand = (brand || '').trim().toLowerCase();
+    return products.some(p => {
+      if (excludeId && p.id === excludeId) return false;
+      const pName = p.name.trim().toLowerCase();
+      const pBrand = (p.brand || '').trim().toLowerCase();
+      return pName === normalizedName && pBrand === normalizedBrand && p.vendor_id === vendorId;
+    });
+  }, [products]);
+
+  const isDuplicateVendor = useCallback((name: string, excludeId?: string): boolean => {
+    const normalizedName = name.trim().toLowerCase();
+    return vendors.some(v => {
+      if (excludeId && v.id === excludeId) return false;
+      return v.name.trim().toLowerCase() === normalizedName;
+    });
+  }, [vendors]);
+
   const addProduct = useCallback(async (product: Omit<Product, 'id'>) => {
+    // Check for duplicate
+    if (isDuplicateProduct(product.name, product.brand, product.vendor_id)) {
+      throw new Error('A product with the same name, brand, and vendor already exists.');
+    }
+
     const newProduct: Product = {
       ...product,
       id: 'P' + Date.now(),
       po_quantity: product.po_quantity || 1,
       include_in_create_po: product.include_in_create_po ?? true,
       added_to_po_queue: product.added_to_po_queue ?? false,
+      po_status: product.po_status ?? 'available',
     };
     const updated = [...products, newProduct];
     setProducts(updated);
     saveToStorage(STORAGE_KEYS.PRODUCTS, updated);
-  }, [products, saveToStorage]);
+  }, [products, saveToStorage, isDuplicateProduct]);
 
   const updateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
     const updated = products.map(p => p.id === id ? { ...p, ...updates } : p);
@@ -238,15 +266,20 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
 
   // PO Queue operations
   const addToPoQueue = useCallback((productId: string, quantity: number) => {
+    // Check if already in queue
+    if (poQueue.some(item => item.productId === productId)) {
+      return; // Already in queue, don't add again
+    }
+    
     // Add to queue
     const newQueue = [...poQueue, { productId, quantity, addedAt: new Date().toISOString() }];
     setPoQueue(newQueue);
     saveToStorage(STORAGE_KEYS.PO_QUEUE, newQueue);
     
-    // Mark product as added to queue and remove from products list for PO Creator
+    // Mark product as queued
     const updatedProducts = products.map(p => 
       p.id === productId 
-        ? { ...p, added_to_po_queue: true, include_in_create_po: false, po_quantity: quantity } 
+        ? { ...p, added_to_po_queue: true, include_in_create_po: false, po_quantity: quantity, po_status: 'queued' as const } 
         : p
     );
     setProducts(updatedProducts);
@@ -258,10 +291,10 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     setPoQueue(newQueue);
     saveToStorage(STORAGE_KEYS.PO_QUEUE, newQueue);
     
-    // Restore product to available list
+    // Restore product to available status
     const updatedProducts = products.map(p => 
       p.id === productId 
-        ? { ...p, added_to_po_queue: false, include_in_create_po: true } 
+        ? { ...p, added_to_po_queue: false, include_in_create_po: true, po_status: 'available' as const } 
         : p
     );
     setProducts(updatedProducts);
@@ -275,6 +308,11 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
 
   // Vendor operations
   const addVendor = useCallback(async (vendor: Omit<Vendor, 'id'>) => {
+    // Check for duplicate
+    if (isDuplicateVendor(vendor.name)) {
+      throw new Error('A vendor with the same name already exists.');
+    }
+
     const newVendor: Vendor = {
       ...vendor,
       id: 'V' + String(vendors.length + 1).padStart(3, '0'),
@@ -282,7 +320,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     const updated = [...vendors, newVendor];
     setVendors(updated);
     saveToStorage(STORAGE_KEYS.VENDORS, updated);
-  }, [vendors, saveToStorage]);
+  }, [vendors, saveToStorage, isDuplicateVendor]);
 
   const updateVendor = useCallback(async (id: string, updates: Partial<Vendor>) => {
     const updated = vendors.map(v => v.id === id ? { ...v, ...updates } : v);
@@ -348,10 +386,10 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     setPurchaseOrders(updatedPOs);
     saveToStorage(STORAGE_KEYS.PURCHASE_ORDERS, updatedPOs);
 
-    // Mark products as no longer available for PO (include_in_create_po = false)
+    // Mark products as po_created (they should NOT return to Products list)
     const updatedProducts = products.map(p => {
       if (items.some(item => item.productId === p.id)) {
-        return { ...p, include_in_create_po: false, added_to_po_queue: false };
+        return { ...p, include_in_create_po: false, added_to_po_queue: false, po_status: 'po_created' as const };
       }
       return p;
     });

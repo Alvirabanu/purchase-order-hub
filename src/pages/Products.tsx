@@ -87,9 +87,8 @@ const Products = () => {
   const { poQueue } = useDataStore();
   const queueProductIds = new Set(poQueue.map(item => item.productId));
   
-  // For ALL roles: Filter out products that are already in the PO Queue
-  // This ensures products "move" to Create PO page when added
-  const availableProducts = products.filter(p => !queueProductIds.has(p.id));
+  // For ALL roles: Filter out products that are NOT 'available' (queued or po_created should be hidden)
+  const availableProducts = products.filter(p => p.po_status === 'available');
 
   const filteredProducts = availableProducts.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -149,6 +148,7 @@ const Products = () => {
           ...formData,
           include_in_create_po: true,
           added_to_po_queue: false,
+          po_status: 'available',
         });
         toast({
           title: "Product Added",
@@ -364,8 +364,10 @@ const Products = () => {
         setMissingVendors(missing);
         setShowMissingVendorsDialog(true);
       } else {
-        // Process and import products
+        // Process and import products with duplicate detection
         let importedCount = 0;
+        const skippedDuplicates: string[] = [];
+        
         for (let i = 1; i < lines.length; i++) {
           const values = lines[i].split(',').map(v => v.trim());
           const vendorName = values[vendorIndex];
@@ -382,27 +384,43 @@ const Products = () => {
             const poQuantity = poQtyIndex >= 0 ? parseInt(values[poQtyIndex]) || 1 : 1;
             
             if (name) {
-              await addProduct({
-                name,
-                brand,
-                category,
-                vendor_id: vendor.id,
-                current_stock: currentStock,
-                reorder_level: reorderLevel,
-                unit: unit as 'pcs' | 'boxes',
-                po_quantity: poQuantity,
-                include_in_create_po: true,
-                added_to_po_queue: false,
-              });
-              importedCount++;
+              try {
+                await addProduct({
+                  name,
+                  brand,
+                  category,
+                  vendor_id: vendor.id,
+                  current_stock: currentStock,
+                  reorder_level: reorderLevel,
+                  unit: unit as 'pcs' | 'boxes',
+                  po_quantity: poQuantity,
+                  include_in_create_po: true,
+                  added_to_po_queue: false,
+                  po_status: 'available',
+                });
+                importedCount++;
+              } catch (error: any) {
+                if (error.message?.includes('already exists')) {
+                  skippedDuplicates.push(`${name} (${brand || 'No Brand'})`);
+                }
+              }
             }
           }
         }
         
-        toast({
-          title: "Import Complete",
-          description: `${importedCount} product(s) imported successfully.`,
-        });
+        if (skippedDuplicates.length > 0) {
+          const displayDuplicates = skippedDuplicates.slice(0, 10);
+          toast({
+            title: "Import Complete with Duplicates",
+            description: `Added: ${importedCount}. Skipped duplicates: ${skippedDuplicates.length}${skippedDuplicates.length > 10 ? ` (showing first 10)` : ''}: ${displayDuplicates.join(', ')}`,
+            variant: "default",
+          });
+        } else {
+          toast({
+            title: "Import Complete",
+            description: `${importedCount} product(s) imported successfully.`,
+          });
+        }
       }
     };
     reader.readAsText(file);

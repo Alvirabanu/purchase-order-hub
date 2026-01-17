@@ -208,17 +208,16 @@ const PODownload = () => {
   };
 
   const confirmDownload = async () => {
-    if (!downloadLocation.trim()) {
-      toast({
-        title: "Location Required",
-        description: "Please enter a download location reference for logging.",
-        variant: "destructive",
-      });
-      return;
-    }
+    // Location is optional now - no blocking
+    const locationRef = downloadLocation.trim() || 'Not specified';
 
     const idsToDownload = isBulkDownload ? Array.from(selectedPOs) : [singleDownloadId!];
     const posToDownload = purchaseOrders.filter(po => idsToDownload.includes(po.id));
+
+    // Log each download
+    idsToDownload.forEach(id => {
+      addDownloadLog(id, locationRef);
+    });
 
     // Log each download
     idsToDownload.forEach(id => {
@@ -490,9 +489,9 @@ const PODownload = () => {
                 </Select>
               </div>
               
-              {/* Location Reference */}
+              {/* Location Reference - Optional */}
               <div className="space-y-2">
-                <Label htmlFor="location">Download Location (Reference)</Label>
+                <Label htmlFor="location">Download Location (Reference) - Optional</Label>
                 <Input
                   id="location"
                   value={downloadLocation}
@@ -500,7 +499,7 @@ const PODownload = () => {
                   placeholder="e.g., Laptop > Downloads, Warehouse A"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Browsers download to your default Downloads folder. This location is only for tracking.
+                  Browsers download to your default Downloads folder. This field is for tracking purposes only and does not change where files are saved.
                 </p>
               </div>
               
@@ -518,7 +517,7 @@ const PODownload = () => {
               <Button variant="outline" onClick={() => setShowLocationDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={confirmDownload} disabled={!downloadLocation.trim()} className="gap-2">
+              <Button onClick={confirmDownload} className="gap-2">
                 {downloadFormat === 'pdf' ? <FileText className="h-4 w-4" /> : <FileSpreadsheet className="h-4 w-4" />}
                 Download
               </Button>

@@ -10,6 +10,8 @@ export interface Vendor {
   contact_person_email: string;
 }
 
+export type ProductPOStatus = 'available' | 'queued' | 'po_created';
+
 export interface Product {
   id: string;
   name: string;
@@ -22,6 +24,7 @@ export interface Product {
   po_quantity: number;
   include_in_create_po: boolean;
   added_to_po_queue: boolean;
+  po_status: ProductPOStatus;
 }
 
 export interface POItem {
