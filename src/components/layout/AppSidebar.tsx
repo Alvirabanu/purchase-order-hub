@@ -27,6 +27,7 @@ import {
   CheckSquare,
   XCircle,
   Download,
+  Shield,
 } from 'lucide-react';
 
 const getRoleLabel = (role: string) => {
@@ -67,7 +68,7 @@ export function AppSidebar() {
   };
 
   // Updated nav items with role-based visibility per requirements:
-  // Main Admin: Dashboard, Products, Vendors, Create PO, PO Register, Approvals, Rejected, PO Download
+  // Main Admin: Dashboard, Products, Vendors, Create PO, PO Register, Approvals, Rejected, PO Download, Access Manager
   // PO Creator: Dashboard, Products, Create PO, PO Register, PO Download
   // Approval Admin: Dashboard, PO Register, Approvals, Rejected, PO Download
   const allNavItems: NavItem[] = [
@@ -79,6 +80,7 @@ export function AppSidebar() {
     { title: 'Approvals', url: '/approvals', icon: CheckSquare, visibleFor: ['main_admin', 'approval_admin'] },
     { title: 'Rejected', url: '/rejected', icon: XCircle, visibleFor: ['main_admin', 'approval_admin'] },
     { title: 'PO Download', url: '/po-download', icon: Download, visibleFor: ['main_admin', 'po_creator', 'approval_admin'] },
+    { title: 'Access Manager', url: '/access-manager', icon: Shield, visibleFor: ['main_admin'] },
   ];
 
   // Filter nav items based on user role
