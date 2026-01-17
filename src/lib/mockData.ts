@@ -2,7 +2,15 @@ import { Vendor, Product, PurchaseOrder } from '@/types';
 
 export const mockVendors: Vendor[] = [
   {
-     {
+    id: 'V001',
+    name: 'ABC Supplies Ltd',
+    gst: '27AABCA1234B1ZV',
+    address: '123 Industrial Area, Mumbai, MH 400001',
+    phone: '+91 98765 43210',
+    contact_person_name: 'Rahul Sharma',
+    contact_person_email: 'rahul@abcsupplies.com'
+  },
+  {
     id: 'V002',
     name: 'Global Electronics Inc',
     gst: '29AADCG5678D1ZP',
