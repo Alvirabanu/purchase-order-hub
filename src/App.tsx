@@ -15,6 +15,7 @@ import PODownload from "@/pages/PODownload";
 import PODetail from "@/pages/PODetail";
 import Approvals from "@/pages/Approvals";
 import Rejected from "@/pages/Rejected";
+import AccessManager from "@/pages/AccessManager";
 import NotFound from "@/pages/NotFound";
 import { useState } from "react";
 
@@ -61,6 +62,7 @@ const AppContent = () => {
         <Route path="/po-download" element={<ProtectedRoute><PODownload /></ProtectedRoute>} />
         <Route path="/approvals" element={<ProtectedRoute><Approvals /></ProtectedRoute>} />
         <Route path="/rejected" element={<ProtectedRoute><Rejected /></ProtectedRoute>} />
+        <Route path="/access-manager" element={<ProtectedRoute><AccessManager /></ProtectedRoute>} />
         <Route path="/po/:id" element={<ProtectedRoute><PODetail /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </Routes>

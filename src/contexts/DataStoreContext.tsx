@@ -1,6 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { Product, PurchaseOrder, Vendor, POItem, POStatus, POQueueItem } from '@/types';
+import { Product, PurchaseOrder, Vendor, POItem, POStatus, POQueueItem, UserRole } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+
+// App User type for credential storage
+export interface AppUser {
+  id: string;
+  name: string;
+  username: string;
+  password: string;
+  role: UserRole;
+  created_at: string;
+}
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -9,6 +19,7 @@ const STORAGE_KEYS = {
   PURCHASE_ORDERS: 'po_manager_pos',
   DOWNLOAD_LOGS: 'po_manager_download_logs',
   PO_QUEUE: 'po_manager_po_queue',
+  APP_USERS: 'po_manager_app_users',
 };
 
 // Extended PO type with additional tracking fields
@@ -77,6 +88,12 @@ interface DataStoreContextType {
   
   // Download logs
   addDownloadLog: (poId: string, location: string) => void;
+  
+  // App Users (credentials management)
+  appUsers: AppUser[];
+  addAppUser: (user: Omit<AppUser, 'id' | 'created_at'>) => void;
+  deleteAppUser: (id: string) => void;
+  validateCredentials: (username: string, password: string, role: UserRole) => AppUser | null;
 }
 
 const DataStoreContext = createContext<DataStoreContextType | undefined>(undefined);
@@ -143,6 +160,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorsLoading, setVendorsLoading] = useState(true);
   const [poQueue, setPoQueue] = useState<POQueueItem[]>([]);
+  const [appUsers, setAppUsers] = useState<AppUser[]>([]);
 
   // Load data from localStorage
   const loadFromStorage = useCallback(<T,>(key: string, defaultValue: T): T => {
@@ -172,12 +190,14 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     const storedProducts = loadFromStorage<Product[]>(STORAGE_KEYS.PRODUCTS, []);
     const storedPOs = loadFromStorage<ExtendedPurchaseOrder[]>(STORAGE_KEYS.PURCHASE_ORDERS, []);
     const storedQueue = loadFromStorage<POQueueItem[]>(STORAGE_KEYS.PO_QUEUE, []);
+    const storedAppUsers = loadFromStorage<AppUser[]>(STORAGE_KEYS.APP_USERS, []);
 
     // Use stored data or initialize with defaults
     setVendors(storedVendors.length > 0 ? storedVendors : initialVendors);
     setProducts(storedProducts.length > 0 ? storedProducts : initialProducts);
     setPurchaseOrders(storedPOs);
     setPoQueue(storedQueue);
+    setAppUsers(storedAppUsers);
 
     // Save initial data if empty
     if (storedVendors.length === 0) {
@@ -586,6 +606,54 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     saveToStorage(STORAGE_KEYS.DOWNLOAD_LOGS, logs);
   }, [user, loadFromStorage, saveToStorage]);
 
+  // App User management
+  const addAppUser = useCallback((userData: Omit<AppUser, 'id' | 'created_at'>) => {
+    const newUser: AppUser = {
+      ...userData,
+      id: 'U' + Date.now() + Math.random().toString(36).substr(2, 9),
+      created_at: new Date().toISOString(),
+    };
+    setAppUsers(prev => {
+      const updated = [...prev, newUser];
+      saveToStorage(STORAGE_KEYS.APP_USERS, updated);
+      return updated;
+    });
+  }, [saveToStorage]);
+
+  const deleteAppUser = useCallback((id: string) => {
+    setAppUsers(prev => {
+      const updated = prev.filter(u => u.id !== id);
+      saveToStorage(STORAGE_KEYS.APP_USERS, updated);
+      return updated;
+    });
+  }, [saveToStorage]);
+
+  const validateCredentials = useCallback((username: string, password: string, role: UserRole): AppUser | null => {
+    // Fixed credentials for Main Admin
+    if (role === 'main_admin') {
+      if (username.toLowerCase() === 'thofik' && password === 'thofik') {
+        return {
+          id: 'admin',
+          name: 'Thofik (Admin)',
+          username: 'thofik',
+          password: 'thofik',
+          role: 'main_admin',
+          created_at: new Date().toISOString(),
+        };
+      }
+      return null;
+    }
+
+    // For other roles, check against stored users
+    const currentUsers = loadFromStorage<AppUser[]>(STORAGE_KEYS.APP_USERS, []);
+    const matchedUser = currentUsers.find(
+      u => u.username.toLowerCase() === username.toLowerCase() && 
+           u.password === password && 
+           u.role === role
+    );
+    return matchedUser || null;
+  }, [loadFromStorage]);
+
   return (
     <DataStoreContext.Provider value={{
       products,
@@ -620,6 +688,10 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       getProductById,
       getNextPONumber,
       addDownloadLog,
+      appUsers,
+      addAppUser,
+      deleteAppUser,
+      validateCredentials,
     }}>
       {children}
     </DataStoreContext.Provider>

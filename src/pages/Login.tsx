@@ -12,14 +12,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDataStore } from '@/contexts/DataStoreContext';
 import { UserRole } from '@/types';
 import { Package, LogIn } from 'lucide-react';
 
 const Login = () => {
   const navigate = useNavigate();
   const { login, isAuthenticated, isLoading } = useAuth();
+  const { validateCredentials } = useDataStore();
   
-  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole | ''>('');
   const [error, setError] = useState('');
@@ -35,8 +37,13 @@ const Login = () => {
     e.preventDefault();
     setError('');
 
-    if (!name.trim()) {
-      setError('Please enter your name');
+    if (!username.trim()) {
+      setError('Please enter your username');
+      return;
+    }
+
+    if (!password.trim()) {
+      setError('Please enter your password');
       return;
     }
 
@@ -45,8 +52,16 @@ const Login = () => {
       return;
     }
 
-    // Password is optional for mock auth
-    login(name.trim(), role, password);
+    // Validate credentials
+    const validUser = validateCredentials(username.trim(), password, role);
+    
+    if (!validUser) {
+      setError('Invalid credentials. Please check your username, password, and role.');
+      return;
+    }
+
+    // Login with validated user info
+    login(validUser.name, role, password);
     navigate('/dashboard');
   };
 
@@ -97,23 +112,23 @@ const Login = () => {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="name">Name / Username</Label>
+              <Label htmlFor="username">Username</Label>
               <Input
-                id="name"
+                id="username"
                 type="text"
-                placeholder="Enter your name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                placeholder="Enter your username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 autoFocus
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password (Optional)</Label>
+              <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
                 type="password"
-                placeholder="Enter password (optional)"
+                placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -146,7 +161,10 @@ const Login = () => {
 
           <div className="mt-6 pt-6 border-t">
             <p className="text-xs text-muted-foreground text-center">
-              This is a local demo. Data is stored in your browser.
+              Main Admin: Use username "thofik" with password "thofik"
+            </p>
+            <p className="text-xs text-muted-foreground text-center mt-1">
+              Other roles: Contact Main Admin to create your account
             </p>
           </div>
         </CardContent>
