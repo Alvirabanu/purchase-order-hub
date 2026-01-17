@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { mockProducts, mockVendors, mockPurchaseOrders } from '@/lib/mockData';
+import { useDataStore } from '@/contexts/DataStoreContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   Package, 
@@ -17,25 +17,33 @@ import {
 const Dashboard = () => {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
+  const { products, vendors, purchaseOrders } = useDataStore();
+
+  // Filter to only show available products (not in queue or with PO)
+  const availableProducts = products.filter(p => p.po_status === 'available' || !p.po_status);
 
   const stats = [
     {
       title: 'Total Products',
-      value: mockProducts.length,
+      value: availableProducts.length,
       icon: Package,
       color: 'text-primary',
       bgColor: 'bg-primary/10',
     },
     {
       title: 'Total Vendors',
-      value: mockVendors.length,
+      value: vendors.length,
       icon: Building2,
       color: 'text-success',
       bgColor: 'bg-success/10',
     },
     {
       title: 'POs This Month',
-      value: mockPurchaseOrders.length,
+      value: purchaseOrders.filter(po => {
+        const poDate = new Date(po.date);
+        const now = new Date();
+        return poDate.getMonth() === now.getMonth() && poDate.getFullYear() === now.getFullYear();
+      }).length,
       icon: FileText,
       color: 'text-warning',
       bgColor: 'bg-warning/10',
@@ -50,7 +58,7 @@ const Dashboard = () => {
     { label: 'PO Register', icon: ClipboardList, path: '/po-register', variant: 'outline' as const, show: hasPermission('view_po_register') },
   ].filter(action => action.show);
 
-  const lowStockProducts = mockProducts.filter(p => p.current_stock <= p.reorder_level);
+  const lowStockProducts = availableProducts.filter(p => p.current_stock <= p.reorder_level);
 
   return (
     <AppLayout>
