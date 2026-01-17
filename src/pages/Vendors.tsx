@@ -445,6 +445,7 @@ const Vendors = () => {
                     <th>Vendor Name</th>
                     <th className="max-w-[200px]">Address</th>
                     <th>GST Number</th>
+                    <th>Phone</th>
                     <th>Contact Person Name</th>
                     <th>Contact Person Email</th>
                     {(canManageVendors || canAddSingle) && <th className="text-right">Actions</th>}
@@ -475,6 +476,7 @@ const Vendors = () => {
                           {vendor.gst}
                         </code>
                       </td>
+                      <td>{vendor.phone || '-'}</td>
                       <td>{vendor.contact_person_name}</td>
                       <td className="text-muted-foreground">{vendor.contact_person_email}</td>
                       {(canManageVendors || canAddSingle) && (
@@ -585,6 +587,15 @@ const Vendors = () => {
                   value={formData.contact_person_email}
                   onChange={(e) => setFormData({ ...formData, contact_person_email: e.target.value })}
                   placeholder="email@example.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone (WhatsApp)</Label>
+                <Input
+                  id="phone"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="e.g., +91 9876543210"
                 />
               </div>
             </div>

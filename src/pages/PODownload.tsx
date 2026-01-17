@@ -22,7 +22,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { useDataStore } from '@/contexts/DataStoreContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Download, Search, FolderDown, FileDown, Package, FileSpreadsheet, FileText } from 'lucide-react';
+import { Download, Search, FolderDown, FileDown, Package, FileSpreadsheet, FileText, Mail, MessageCircle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
@@ -290,6 +290,97 @@ const PODownload = () => {
     }
   };
 
+  // Send PO via WhatsApp
+  const handleSendWhatsApp = (poId: string) => {
+    const po = purchaseOrders.find(p => p.id === poId);
+    if (!po) return;
+    
+    const vendor = getVendorById(po.vendor_id);
+    if (!vendor?.phone) {
+      toast({
+        title: "No Phone Number",
+        description: "This vendor doesn't have a phone number configured.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Clean phone number (remove spaces, dashes, etc.)
+    const cleanPhone = vendor.phone.replace(/[\s\-\(\)]/g, '');
+    
+    // Create message with PO details
+    const message = `*Purchase Order: ${po.po_number}*
+Date: ${formatDate(po.date)}
+Vendor: ${vendor.name}
+Status: Approved
+
+Items:
+${po.items?.map(item => {
+      const product = getProductById(item.product_id);
+      return product ? `- ${product.name} (${product.brand}): ${item.quantity} ${product.unit}` : '';
+    }).filter(Boolean).join('\n') || 'No items'}
+
+Total Items: ${po.total_items}
+
+Please confirm receipt of this purchase order.`;
+
+    // Open WhatsApp with the message
+    const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
+    
+    toast({
+      title: "Opening WhatsApp",
+      description: `Sending PO ${po.po_number} to ${vendor.name}`,
+    });
+  };
+
+  // Send PO via Email (opens default email client)
+  const handleSendEmail = (poId: string) => {
+    const po = purchaseOrders.find(p => p.id === poId);
+    if (!po) return;
+    
+    const vendor = getVendorById(po.vendor_id);
+    if (!vendor?.contact_person_email) {
+      toast({
+        title: "No Email Address",
+        description: "This vendor doesn't have an email address configured.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Create email subject and body
+    const subject = `Purchase Order: ${po.po_number}`;
+    const body = `Dear ${vendor.contact_person_name || vendor.name},
+
+Please find the Purchase Order details below:
+
+PO Number: ${po.po_number}
+Date: ${formatDate(po.date)}
+Vendor: ${vendor.name}
+
+Items:
+${po.items?.map(item => {
+      const product = getProductById(item.product_id);
+      return product ? `• ${product.name} (${product.brand}): ${item.quantity} ${product.unit}` : '';
+    }).filter(Boolean).join('\n') || 'No items'}
+
+Total Items: ${po.total_items}
+
+Please confirm receipt of this purchase order.
+
+Thank you.`;
+
+    // Open default email client
+    const mailtoUrl = `mailto:${vendor.contact_person_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailtoUrl;
+    
+    toast({
+      title: "Opening Email Client",
+      description: `Sending PO ${po.po_number} to ${vendor.contact_person_email}`,
+    });
+  };
+
   const allSelected = filteredPOs.length > 0 && filteredPOs.every(po => selectedPOs.has(po.id));
   const someSelected = selectedPOs.size > 0;
 
@@ -440,7 +531,7 @@ const PODownload = () => {
                     <th>Date</th>
                     <th className="text-center">Items</th>
                     <th>Approved At</th>
-                    <th className="text-right">Action</th>
+                    <th className="text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -466,17 +557,39 @@ const PODownload = () => {
                           {po.approved_at ? formatDate(po.approved_at) : '-'}
                         </td>
                         <td className="text-right">
-                          {canDownload && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDownloadSingle(po.id)}
-                              className="gap-1"
-                            >
-                              <FileDown className="h-4 w-4" />
-                              Download
-                            </Button>
-                          )}
+                          <div className="flex justify-end gap-1">
+                            {canDownload && (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDownloadSingle(po.id)}
+                                  className="gap-1"
+                                  title="Download PO"
+                                >
+                                  <FileDown className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleSendWhatsApp(po.id)}
+                                  className="gap-1 text-green-600 hover:text-green-700"
+                                  title="Send via WhatsApp"
+                                >
+                                  <MessageCircle className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleSendEmail(po.id)}
+                                  className="gap-1 text-blue-600 hover:text-blue-700"
+                                  title="Send via Email"
+                                >
+                                  <Mail className="h-4 w-4" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );

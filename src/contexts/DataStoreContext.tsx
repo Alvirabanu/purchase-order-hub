@@ -114,13 +114,14 @@ const mapSupabaseProduct = (p: any): Product => ({
 
 // Helper to map Supabase vendor to local Vendor type
 const mapSupabaseVendor = (v: any): Vendor => ({
-  id: v.id,
+  id: v.display_id || v.id, // Use display_id (V001, V002) for display, fallback to uuid
   name: v.vendor_name,
   gst: v.gst_number || '',
   address: v.address || '',
-  phone: '', // Not in Supabase schema
+  phone: v.phone || '',
   contact_person_name: v.contact_person_name || '',
   contact_person_email: v.contact_person_email || '',
+  _uuid: v.id, // Store the actual UUID for database operations
 });
 
 // Helper to map Supabase PO to local ExtendedPurchaseOrder type
@@ -357,11 +358,18 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
 
   // Product operations
   const addProduct = useCallback(async (product: Omit<Product, 'id'>) => {
+    // Convert vendor display_id to UUID if needed
+    let vendorUuid = product.vendor_id || null;
+    if (vendorUuid) {
+      const vendor = vendors.find(v => v.id === vendorUuid);
+      vendorUuid = vendor?._uuid || vendorUuid;
+    }
+    
     const { error } = await supabase.from('products').insert({
       product_name: product.name,
       brand: product.brand || null,
       category: product.category || null,
-      vendor_id: product.vendor_id || null,
+      vendor_id: vendorUuid,
       current_stock: product.current_stock ?? 0,
       reorder_level: product.reorder_level ?? 0,
       unit: product.unit || 'pcs',
@@ -374,20 +382,29 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       throw error;
     }
     // Realtime will handle the refresh
-  }, []);
+  }, [vendors]);
 
   const addProductsBatch = useCallback(async (productsData: Omit<Product, 'id'>[]) => {
-    const insertData = productsData.map(product => ({
-      product_name: product.name,
-      brand: product.brand || null,
-      category: product.category || null,
-      vendor_id: product.vendor_id || null,
-      current_stock: product.current_stock ?? 0,
-      reorder_level: product.reorder_level ?? 0,
-      unit: product.unit || 'pcs',
-      default_po_quantity: product.po_quantity ?? 1,
-      include_in_po: product.include_in_create_po ?? true,
-    }));
+    const insertData = productsData.map(product => {
+      // Convert vendor display_id to UUID if needed
+      let vendorUuid = product.vendor_id || null;
+      if (vendorUuid) {
+        const vendor = vendors.find(v => v.id === vendorUuid);
+        vendorUuid = vendor?._uuid || vendorUuid;
+      }
+      
+      return {
+        product_name: product.name,
+        brand: product.brand || null,
+        category: product.category || null,
+        vendor_id: vendorUuid,
+        current_stock: product.current_stock ?? 0,
+        reorder_level: product.reorder_level ?? 0,
+        unit: product.unit || 'pcs',
+        default_po_quantity: product.po_quantity ?? 1,
+        include_in_po: product.include_in_create_po ?? true,
+      };
+    });
 
     const { error } = await supabase.from('products').insert(insertData);
     
@@ -397,14 +414,22 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     }
     
     return productsData.length;
-  }, []);
+  }, [vendors]);
 
   const updateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
     const supabaseUpdates: any = {};
     if (updates.name !== undefined) supabaseUpdates.product_name = updates.name;
     if (updates.brand !== undefined) supabaseUpdates.brand = updates.brand;
     if (updates.category !== undefined) supabaseUpdates.category = updates.category;
-    if (updates.vendor_id !== undefined) supabaseUpdates.vendor_id = updates.vendor_id;
+    if (updates.vendor_id !== undefined) {
+      // Convert vendor display_id to UUID if needed
+      let vendorUuid = updates.vendor_id;
+      if (vendorUuid) {
+        const vendor = vendors.find(v => v.id === vendorUuid);
+        vendorUuid = vendor?._uuid || vendorUuid;
+      }
+      supabaseUpdates.vendor_id = vendorUuid;
+    }
     if (updates.current_stock !== undefined) supabaseUpdates.current_stock = updates.current_stock;
     if (updates.reorder_level !== undefined) supabaseUpdates.reorder_level = updates.reorder_level;
     if (updates.unit !== undefined) supabaseUpdates.unit = updates.unit;
@@ -427,7 +452,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     if (updates.added_to_po_queue !== undefined || updates.po_status !== undefined) {
       setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
     }
-  }, []);
+  }, [vendors]);
 
   const deleteProduct = useCallback(async (id: string) => {
     const { error } = await supabase.from('products').delete().eq('id', id);
@@ -503,6 +528,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       vendor_name: vendor.name,
       gst_number: vendor.gst || null,
       address: vendor.address || null,
+      phone: vendor.phone || null,
       contact_person_name: vendor.contact_person_name || null,
       contact_person_email: vendor.contact_person_email || null,
     });
@@ -537,6 +563,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
         vendor_name: vendor.name,
         gst_number: vendor.gst || null,
         address: vendor.address || null,
+        phone: vendor.phone || null,
         contact_person_name: vendor.contact_person_name || null,
         contact_person_email: vendor.contact_person_email || null,
       }));
@@ -553,38 +580,53 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
   }, [vendors]);
 
   const updateVendor = useCallback(async (id: string, updates: Partial<Vendor>) => {
+    // Find the actual UUID from the vendor with this display_id
+    const vendor = vendors.find(v => v.id === id);
+    const uuid = vendor?._uuid || id;
+    
     const supabaseUpdates: any = {};
     if (updates.name !== undefined) supabaseUpdates.vendor_name = updates.name;
     if (updates.gst !== undefined) supabaseUpdates.gst_number = updates.gst;
     if (updates.address !== undefined) supabaseUpdates.address = updates.address;
+    if (updates.phone !== undefined) supabaseUpdates.phone = updates.phone;
     if (updates.contact_person_name !== undefined) supabaseUpdates.contact_person_name = updates.contact_person_name;
     if (updates.contact_person_email !== undefined) supabaseUpdates.contact_person_email = updates.contact_person_email;
 
-    const { error } = await supabase.from('vendors').update(supabaseUpdates).eq('id', id);
+    const { error } = await supabase.from('vendors').update(supabaseUpdates).eq('id', uuid);
     
     if (error) {
       console.error('Error updating vendor:', error);
       throw error;
     }
-  }, []);
+  }, [vendors]);
 
   const deleteVendor = useCallback(async (id: string) => {
-    const { error } = await supabase.from('vendors').delete().eq('id', id);
+    // Find the actual UUID from the vendor with this display_id
+    const vendor = vendors.find(v => v.id === id);
+    const uuid = vendor?._uuid || id;
+    
+    const { error } = await supabase.from('vendors').delete().eq('id', uuid);
     
     if (error) {
       console.error('Error deleting vendor:', error);
       throw error;
     }
-  }, []);
+  }, [vendors]);
 
   const deleteVendors = useCallback(async (ids: string[]) => {
-    const { error } = await supabase.from('vendors').delete().in('id', ids);
+    // Convert display_ids to UUIDs
+    const uuids = ids.map(id => {
+      const vendor = vendors.find(v => v.id === id);
+      return vendor?._uuid || id;
+    });
+    
+    const { error } = await supabase.from('vendors').delete().in('id', uuids);
     
     if (error) {
       console.error('Error deleting vendors:', error);
       throw error;
     }
-  }, []);
+  }, [vendors]);
 
   // Purchase Order operations
   const getNextPONumber = useCallback(() => {
@@ -605,14 +647,18 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
   const addPurchaseOrder = useCallback(async (vendorId: string, items: { productId: string; quantity: number }[]) => {
     if (!user) throw new Error('Must be logged in to create PO');
 
+    // vendorId might be a display_id, convert to UUID
+    const vendor = vendors.find(v => v.id === vendorId);
+    const vendorUuid = vendor?._uuid || vendorId;
+    
     const poNumber = getNextPONumber();
 
-    // Create PO
+    // Create PO - created_by is text, stores user name
     const { data: poData, error: poError } = await supabase
       .from('purchase_orders')
       .insert({
         po_number: poNumber,
-        vendor_id: vendorId,
+        vendor_id: vendorUuid,
         status: 'created',
         created_by: user.name,
       })
@@ -747,9 +793,9 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [user]);
 
-  // Lookup helpers
+  // Lookup helpers - find vendor by display_id or UUID
   const getVendorById = useCallback((id: string) => {
-    return vendors.find(v => v.id === id);
+    return vendors.find(v => v.id === id || v._uuid === id);
   }, [vendors]);
 
   const getProductById = useCallback((id: string) => {

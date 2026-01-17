@@ -8,6 +8,7 @@ export interface Vendor {
   phone: string;
   contact_person_name: string;
   contact_person_email: string;
+  _uuid?: string; // Actual Supabase UUID for database operations
 }
 
 export type ProductPOStatus = 'available' | 'queued' | 'po_created';
