@@ -57,6 +57,7 @@ const PODownload = () => {
   const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>('pdf');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingPoId, setDeletingPoId] = useState<string | null>(null);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [showComingSoonDialog, setShowComingSoonDialog] = useState(false);
   const [comingSoonFeature, setComingSoonFeature] = useState<'email' | 'whatsapp'>('email');
   // Only show approved POs
@@ -376,6 +377,51 @@ const PODownload = () => {
     setShowComingSoonDialog(true);
   };
 
+  // Bulk Delete handler
+  const handleBulkDelete = () => {
+    if (selectedPOs.size === 0) {
+      toast({
+        title: "No POs Selected",
+        description: "Please select at least one PO to delete.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setBulkDeleteDialogOpen(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    const idsToDelete = Array.from(selectedPOs);
+    let deletedCount = 0;
+    let failedCount = 0;
+
+    for (const id of idsToDelete) {
+      try {
+        await deletePurchaseOrder(id);
+        deletedCount++;
+      } catch (error) {
+        failedCount++;
+        console.error(`Failed to delete PO ${id}:`, error);
+      }
+    }
+
+    if (deletedCount > 0) {
+      toast({
+        title: "Bulk Delete Complete",
+        description: `${deletedCount} PO${deletedCount > 1 ? 's' : ''} deleted successfully.${failedCount > 0 ? ` ${failedCount} failed.` : ''}`,
+      });
+    } else {
+      toast({
+        title: "Delete Failed",
+        description: "Could not delete selected POs.",
+        variant: "destructive",
+      });
+    }
+
+    setSelectedPOs(new Set());
+    setBulkDeleteDialogOpen(false);
+  };
+
   const allSelected = filteredPOs.length > 0 && filteredPOs.every(po => selectedPOs.has(po.id));
   const someSelected = selectedPOs.size > 0;
 
@@ -517,6 +563,16 @@ const PODownload = () => {
                   <Mail className="h-4 w-4" />
                   Bulk Email
                 </Button>
+                {canDelete && (
+                  <Button 
+                    onClick={handleBulkDelete}
+                    variant="outline"
+                    className="gap-2 text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Bulk Delete
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -717,6 +773,24 @@ const PODownload = () => {
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction onClick={confirmDeletePO} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                 Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Bulk Delete Confirmation Dialog */}
+        <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete {selectedPOs.size} Purchase Order{selectedPOs.size > 1 ? 's' : ''}</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete {selectedPOs.size} selected purchase order{selectedPOs.size > 1 ? 's' : ''}? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmBulkDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                Delete {selectedPOs.size} PO{selectedPOs.size > 1 ? 's' : ''}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
