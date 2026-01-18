@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { MessageCircle, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
-import { PurchaseOrder, Vendor } from '@/types';
+import { PurchaseOrder, Vendor, Product } from '@/types';
 
 interface VendorGroup {
   vendor: Vendor;
@@ -31,6 +31,7 @@ interface WhatsAppBulkDialogProps {
   onOpenChange: (open: boolean) => void;
   selectedPOs: PurchaseOrder[];
   getVendorById: (id: string) => Vendor | undefined;
+  getProductById: (id: string) => Product | undefined;
 }
 
 const formatPhoneNumber = (phone: string): string => {
@@ -41,13 +42,47 @@ const formatPhoneNumber = (phone: string): string => {
   return cleaned;
 };
 
-const generateBulkMessage = (vendorName: string, poNumbers: string[]): string => {
-  const poList = poNumbers.join('\n');
-  return `Hello ${vendorName},
+const formatDate = (dateStr: string) => {
+  return new Date(dateStr).toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
+};
 
-Please find the Purchase Orders below:
+const generateBulkMessage = (
+  vendorName: string,
+  pos: PurchaseOrder[],
+  getProductById: (id: string) => Product | undefined
+): string => {
+  const poDetails = pos.map((po) => {
+    const productLines = po.items
+      .map((item) => {
+        const product = getProductById(item.product_id);
+        const productName = product?.name || 'Unknown Product';
+        const brand = product?.brand || '-';
+        const category = product?.category || '-';
+        const unit = product?.unit || 'pcs';
+        return `  • ${productName} | Brand: ${brand} | Category: ${category} | Unit: ${unit} | Qty: ${item.quantity}`;
+      })
+      .join('\n');
 
-${poList}
+    const approvedDate = po.approved_at ? formatDate(po.approved_at) : '-';
+
+    return `*PO Number:* ${po.po_number}
+*Date:* ${formatDate(po.date)}
+*Status:* ${po.status.toUpperCase()}
+*Approved:* ${approvedDate}
+*Items:*
+${productLines}
+*Total Items:* ${po.total_items}`;
+  }).join('\n\n---\n\n');
+
+  return `*PURCHASE ORDERS*
+
+*Vendor:* ${vendorName}
+
+${poDetails}
 
 Please review and confirm.
 
@@ -59,6 +94,7 @@ export const WhatsAppBulkDialog = ({
   onOpenChange,
   selectedPOs,
   getVendorById,
+  getProductById,
 }: WhatsAppBulkDialogProps) => {
   const [vendorGroups, setVendorGroups] = useState<VendorGroup[]>([]);
 
@@ -81,12 +117,12 @@ export const WhatsAppBulkDialog = ({
       vendor,
       pos,
       phone: vendor.phone || '',
-      message: generateBulkMessage(vendor.name, pos.map((p) => p.po_number)),
+      message: generateBulkMessage(vendor.name, pos, getProductById),
       hasError: !vendor.phone,
       errorMessage: !vendor.phone ? 'Phone number missing' : '',
       expanded: true,
     }));
-  }, [selectedPOs, getVendorById]);
+  }, [selectedPOs, getVendorById, getProductById]);
 
   useEffect(() => {
     if (open) {

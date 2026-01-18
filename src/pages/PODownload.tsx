@@ -855,6 +855,7 @@ const PODownload = () => {
           onOpenChange={setShowWhatsAppBulkDialog}
           selectedPOs={selectedPOsForBulk}
           getVendorById={getVendorById}
+          getProductById={getProductById}
         />
       </div>
     </AppLayout>

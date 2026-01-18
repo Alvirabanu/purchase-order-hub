@@ -32,6 +32,14 @@ const formatPhoneNumber = (phone: string): string => {
   return cleaned;
 };
 
+const formatDate = (dateStr: string) => {
+  return new Date(dateStr).toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
+};
+
 const generateMessage = (
   po: PurchaseOrder,
   vendorName: string,
@@ -41,19 +49,29 @@ const generateMessage = (
     .map((item) => {
       const product = getProductById(item.product_id);
       const productName = product?.name || 'Unknown Product';
-      return `- ${productName} – Qty ${item.quantity}`;
+      const brand = product?.brand || '-';
+      const category = product?.category || '-';
+      const unit = product?.unit || 'pcs';
+      return `• ${productName} | Brand: ${brand} | Category: ${category} | Unit: ${unit} | Qty: ${item.quantity}`;
     })
     .join('\n');
 
-  return `Hello ${vendorName},
+  const approvedDate = po.approved_at ? formatDate(po.approved_at) : '-';
 
-Please find the Purchase Order details below:
+  return `*PURCHASE ORDER*
 
-PO Number: ${po.po_number}
-Products:
+*PO Number:* ${po.po_number}
+*Date:* ${formatDate(po.date)}
+*Vendor:* ${vendorName}
+*Status:* ${po.status.toUpperCase()}
+*Approved:* ${approvedDate}
+
+*Items:*
 ${productLines}
 
-Please confirm.
+*Total Items:* ${po.total_items}
+
+Please review and confirm.
 
 Thank you.`;
 };
