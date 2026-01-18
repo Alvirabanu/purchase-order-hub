@@ -56,6 +56,7 @@ const Products = () => {
     deleteProducts, 
     getVendorById,
     addToPoQueue,
+    addToPoQueueBatch,
   } = useDataStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -283,7 +284,7 @@ const Products = () => {
     }
   };
 
-  // Bulk Add to PO handler
+  // Bulk Add to PO handler - uses batch operation to avoid stale state
   const handleBulkAddToQueue = async () => {
     const productsToAdd = filteredProducts.filter(p => 
       selectedProducts.has(p.id) && (p.po_quantity || 1) > 0
@@ -298,28 +299,34 @@ const Products = () => {
       return;
     }
 
-    let addedCount = 0;
-    let skippedCount = 0;
-
-    for (const product of productsToAdd) {
-      if (queueProductIds.has(product.id)) {
-        skippedCount++;
-        continue;
+    try {
+      const items = productsToAdd.map(p => ({
+        productId: p.id,
+        quantity: p.po_quantity || 1,
+      }));
+      
+      const { added, skipped } = await addToPoQueueBatch(items);
+      
+      setSelectedProducts(new Set());
+      
+      if (skipped > 0) {
+        toast({
+          title: "Bulk Add Complete",
+          description: `Skipped ${skipped} already in PO queue. Added ${added}.`,
+        });
+      } else {
+        toast({
+          title: "Bulk Add Complete",
+          description: `Added ${added} product(s) to PO Queue.`,
+        });
       }
-      try {
-        await addToPoQueue(product.id, product.po_quantity || 1);
-        addedCount++;
-      } catch (error) {
-        console.error('Error adding product to queue:', error);
-      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add products to queue",
+        variant: "destructive",
+      });
     }
-
-    setSelectedProducts(new Set());
-    
-    toast({
-      title: "Bulk Add Complete",
-      description: `Added ${addedCount} product(s) to PO Queue.${skippedCount > 0 ? ` ${skippedCount} already in queue.` : ''}`,
-    });
   };
 
   // Check if any selected product has PO Quantity > 0 for bulk add
