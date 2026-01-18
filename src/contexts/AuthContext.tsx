@@ -30,7 +30,8 @@ export type Permission =
   | 'reject_po'
   | 'bulk_approve_po'
   | 'download_po'
-  | 'bulk_download_po';
+  | 'bulk_download_po'
+  | 'delete_po';
 
 // Updated role permissions per requirements:
 // Main Admin: Dashboard, Products, Vendors, Create PO, PO Register, Approvals, Rejected, PO Download
@@ -62,6 +63,7 @@ const rolePermissions: Record<UserRole, Permission[]> = {
     'bulk_approve_po',
     'download_po',
     'bulk_download_po',
+    'delete_po',
   ],
   po_creator: [
     'view_dashboard',

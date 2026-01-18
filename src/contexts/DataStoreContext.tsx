@@ -66,6 +66,7 @@ interface DataStoreContextType {
   approvePurchaseOrder: (id: string) => Promise<void>;
   approvePurchaseOrders: (ids: string[]) => Promise<void>;
   rejectPurchaseOrder: (id: string, reason?: string) => Promise<void>;
+  deletePurchaseOrder: (id: string) => Promise<void>;
   
   // Vendors
   vendors: Vendor[];
@@ -661,6 +662,34 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     await fetchVendors();
   }, [vendors, fetchVendors]);
 
+  // Delete PO operation
+  const deletePurchaseOrder = useCallback(async (id: string) => {
+    // First delete PO items
+    const { error: itemsError } = await supabase
+      .from('purchase_order_items')
+      .delete()
+      .eq('po_id', id);
+    
+    if (itemsError) {
+      console.error('Error deleting PO items:', itemsError);
+      throw itemsError;
+    }
+
+    // Then delete the PO
+    const { error } = await supabase
+      .from('purchase_orders')
+      .delete()
+      .eq('id', id);
+    
+    if (error) {
+      console.error('Error deleting PO:', error);
+      throw error;
+    }
+    
+    // Immediately refresh POs for instant UI update
+    await fetchPurchaseOrders();
+  }, [fetchPurchaseOrders]);
+
   // Purchase Order operations
   const getNextPONumber = useCallback(() => {
     if (purchaseOrders.length === 0) {
@@ -926,6 +955,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       approvePurchaseOrder,
       approvePurchaseOrders,
       rejectPurchaseOrder,
+      deletePurchaseOrder,
       vendors,
       vendorsLoading,
       refreshVendors,
