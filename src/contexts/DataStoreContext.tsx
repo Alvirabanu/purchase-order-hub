@@ -59,7 +59,8 @@ interface DataStoreContextType {
   
   // PO Queue
   poQueue: POQueueItem[];
-  addToPoQueue: (productId: string, quantity: number) => void;
+  addToPoQueue: (productId: string, quantity: number) => Promise<void>;
+  addToPoQueueBatch: (items: { productId: string; quantity: number }[]) => Promise<{ added: number; skipped: number }>;
   removeFromPoQueue: (productId: string) => void;
   clearPoQueue: () => void;
   
@@ -542,6 +543,65 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
         ? { ...p, added_to_po_queue: true, include_in_create_po: false, po_quantity: quantity, po_status: 'queued' as const } 
         : p
     ));
+  }, [poQueue, saveToStorage]);
+
+  // Batch add to PO queue - handles all products in a single operation to avoid stale state
+  const addToPoQueueBatch = useCallback(async (items: { productId: string; quantity: number }[]): Promise<{ added: number; skipped: number }> => {
+    // Filter out products already in queue
+    const existingIds = new Set(poQueue.map(item => item.productId));
+    const newItems = items.filter(item => !existingIds.has(item.productId));
+    const skipped = items.length - newItems.length;
+    
+    if (newItems.length === 0) {
+      return { added: 0, skipped };
+    }
+    
+    // Update all products in a single batch operation
+    const productIds = newItems.map(item => item.productId);
+    
+    // Update po_status in database for all items at once
+    const { error } = await supabase
+      .from('products')
+      .update({ po_status: 'queued', include_in_po: false })
+      .in('id', productIds);
+    
+    if (error) {
+      console.error('Error batch adding to queue:', error);
+      throw error;
+    }
+    
+    // Update individual quantities
+    for (const item of newItems) {
+      await supabase
+        .from('products')
+        .update({ default_po_quantity: item.quantity })
+        .eq('id', item.productId);
+    }
+    
+    // Update local queue state in a single operation
+    const newQueueItems = newItems.map(item => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      addedAt: new Date().toISOString(),
+    }));
+    
+    setPoQueue(prev => {
+      const updatedQueue = [...prev, ...newQueueItems];
+      saveToStorage(STORAGE_KEYS.PO_QUEUE, updatedQueue);
+      return updatedQueue;
+    });
+    
+    // Update local product state in a single operation
+    const productIdSet = new Set(productIds);
+    const quantityMap = new Map(newItems.map(item => [item.productId, item.quantity]));
+    
+    setProducts(prev => prev.map(p => 
+      productIdSet.has(p.id)
+        ? { ...p, added_to_po_queue: true, include_in_create_po: false, po_quantity: quantityMap.get(p.id) || p.po_quantity, po_status: 'queued' as const } 
+        : p
+    ));
+    
+    return { added: newItems.length, skipped };
   }, [poQueue, saveToStorage]);
 
   const removeFromPoQueue = useCallback(async (productId: string) => {
@@ -1073,6 +1133,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       deleteProducts,
       poQueue,
       addToPoQueue,
+      addToPoQueueBatch,
       removeFromPoQueue,
       clearPoQueue,
       purchaseOrders,
