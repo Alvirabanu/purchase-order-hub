@@ -119,8 +119,8 @@ const mapSupabaseProduct = (p: any): Product => ({
   unit: (p.unit as 'pcs' | 'boxes') || 'pcs',
   po_quantity: p.default_po_quantity ?? 1,
   include_in_create_po: p.include_in_po ?? true,
-  added_to_po_queue: false, // Managed locally
-  po_status: 'available', // Managed locally
+  added_to_po_queue: p.po_status === 'queued',
+  po_status: (p.po_status as 'available' | 'queued' | 'po_created') || 'available',
 });
 
 // Helper to map Supabase vendor to local Vendor type
@@ -227,26 +227,32 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       
       if (error) throw error;
       
-      // Get queue from localStorage to mark queued items
-      const storedQueue = loadFromStorage<POQueueItem[]>(STORAGE_KEYS.PO_QUEUE, []);
-      const queuedIds = new Set(storedQueue.map(q => q.productId));
-      
-      const mappedProducts = (data || []).map(p => {
-        const product = mapSupabaseProduct(p);
-        if (queuedIds.has(product.id)) {
-          product.added_to_po_queue = true;
-          product.po_status = 'queued';
-          product.include_in_create_po = false;
-        }
-        return product;
-      });
+      const mappedProducts = (data || []).map(p => mapSupabaseProduct(p));
       setProducts(mappedProducts);
+      
+      // Sync queue from DB po_status (products with status 'queued')
+      const queuedProducts = mappedProducts.filter(p => p.po_status === 'queued');
+      const storedQueue = loadFromStorage<POQueueItem[]>(STORAGE_KEYS.PO_QUEUE, []);
+      
+      // Merge: keep queue items that exist in DB as queued
+      const validQueueIds = new Set(queuedProducts.map(p => p.id));
+      const syncedQueue = storedQueue.filter(item => validQueueIds.has(item.productId));
+      
+      // Add any queued products not in local storage
+      queuedProducts.forEach(p => {
+        if (!syncedQueue.some(q => q.productId === p.id)) {
+          syncedQueue.push({ productId: p.id, quantity: p.po_quantity, addedAt: new Date().toISOString() });
+        }
+      });
+      
+      setPoQueue(syncedQueue);
+      saveToStorage(STORAGE_KEYS.PO_QUEUE, syncedQueue);
     } catch (error) {
       console.error('Error fetching products:', error);
     } finally {
       setProductsLoading(false);
     }
-  }, [loadFromStorage]);
+  }, [loadFromStorage, saveToStorage]);
 
   // Fetch purchase orders from Supabase
   const fetchPurchaseOrders = useCallback(async () => {
@@ -509,10 +515,21 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     await fetchProducts();
   }, [fetchProducts]);
 
-  // PO Queue operations (local only - per user)
-  const addToPoQueue = useCallback((productId: string, quantity: number) => {
+  // PO Queue operations - persisted to DB via po_status
+  const addToPoQueue = useCallback(async (productId: string, quantity: number) => {
     if (poQueue.some(item => item.productId === productId)) {
       return;
+    }
+    
+    // Update po_status in database
+    const { error } = await supabase
+      .from('products')
+      .update({ po_status: 'queued', default_po_quantity: quantity, include_in_po: false })
+      .eq('id', productId);
+    
+    if (error) {
+      console.error('Error adding to queue:', error);
+      throw error;
     }
     
     const newQueue = [...poQueue, { productId, quantity, addedAt: new Date().toISOString() }];
@@ -527,7 +544,18 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     ));
   }, [poQueue, saveToStorage]);
 
-  const removeFromPoQueue = useCallback((productId: string) => {
+  const removeFromPoQueue = useCallback(async (productId: string) => {
+    // Update po_status in database back to available
+    const { error } = await supabase
+      .from('products')
+      .update({ po_status: 'available', include_in_po: true })
+      .eq('id', productId);
+    
+    if (error) {
+      console.error('Error removing from queue:', error);
+      throw error;
+    }
+    
     const newQueue = poQueue.filter(item => item.productId !== productId);
     setPoQueue(newQueue);
     saveToStorage(STORAGE_KEYS.PO_QUEUE, newQueue);
@@ -539,8 +567,22 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     ));
   }, [poQueue, saveToStorage]);
 
-  const clearPoQueue = useCallback(() => {
+  const clearPoQueue = useCallback(async () => {
     const queuedIds = poQueue.map(item => item.productId);
+    
+    if (queuedIds.length > 0) {
+      // Update po_status in database back to available
+      const { error } = await supabase
+        .from('products')
+        .update({ po_status: 'available', include_in_po: true })
+        .in('id', queuedIds);
+      
+      if (error) {
+        console.error('Error clearing queue:', error);
+        throw error;
+      }
+    }
+    
     setPoQueue([]);
     saveToStorage(STORAGE_KEYS.PO_QUEUE, []);
     
@@ -858,14 +900,13 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
         throw itemsError;
       }
 
-      // Mark products as included in PO
+      // Mark products as 'po_created' - they will NOT return to Products
       const productIds = items.map(item => item.productId);
       await supabase
         .from('products')
-        .update({ include_in_po: false })
+        .update({ include_in_po: false, po_status: 'po_created' })
         .in('id', productIds);
     }
-
     // Refresh data
     await fetchPurchaseOrders();
     await fetchProducts();
