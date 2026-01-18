@@ -126,7 +126,8 @@ const mapSupabaseVendor = (v: any): Vendor => ({
 
 // Helper to map Supabase PO to local ExtendedPurchaseOrder type
 const mapSupabasePO = (po: any, items: any[], vendors: Vendor[]): ExtendedPurchaseOrder => {
-  const vendor = vendors.find(v => v.id === po.vendor_id);
+  // Look up vendor by UUID (_uuid) or display_id (id)
+  const vendor = vendors.find(v => v._uuid === po.vendor_id || v.id === po.vendor_id);
   return {
     id: po.id,
     po_number: po.po_number,
@@ -292,51 +293,64 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     fetchProducts();
     fetchPurchaseOrders();
 
-    // Set up realtime subscriptions
+    // Set up realtime subscriptions with proper status handling
     const channels: RealtimeChannel[] = [];
 
     // Vendors realtime
     const vendorsChannel = supabase
-      .channel('vendors-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendors' }, () => {
-        console.log('Vendors changed, refreshing...');
+      .channel('vendors-realtime-' + Date.now())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendors' }, (payload) => {
+        console.log('[Realtime] Vendors changed:', payload.eventType);
         fetchVendors();
       })
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log('[Realtime] Vendors subscription status:', status);
+        if (err) console.error('[Realtime] Vendors error:', err);
+      });
     channels.push(vendorsChannel);
 
     // Products realtime
     const productsChannel = supabase
-      .channel('products-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
-        console.log('Products changed, refreshing...');
+      .channel('products-realtime-' + Date.now())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+        console.log('[Realtime] Products changed:', payload.eventType);
         fetchProducts();
       })
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log('[Realtime] Products subscription status:', status);
+        if (err) console.error('[Realtime] Products error:', err);
+      });
     channels.push(productsChannel);
 
     // Purchase orders realtime
     const posChannel = supabase
-      .channel('purchase-orders-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_orders' }, () => {
-        console.log('Purchase orders changed, refreshing...');
+      .channel('purchase-orders-realtime-' + Date.now())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_orders' }, (payload) => {
+        console.log('[Realtime] Purchase orders changed:', payload.eventType);
         fetchPurchaseOrders();
       })
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log('[Realtime] Purchase orders subscription status:', status);
+        if (err) console.error('[Realtime] Purchase orders error:', err);
+      });
     channels.push(posChannel);
 
     // PO items realtime
     const poItemsChannel = supabase
-      .channel('po-items-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_order_items' }, () => {
-        console.log('PO items changed, refreshing...');
+      .channel('po-items-realtime-' + Date.now())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_order_items' }, (payload) => {
+        console.log('[Realtime] PO items changed:', payload.eventType);
         fetchPurchaseOrders();
       })
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log('[Realtime] PO items subscription status:', status);
+        if (err) console.error('[Realtime] PO items error:', err);
+      });
     channels.push(poItemsChannel);
 
     // Cleanup subscriptions on unmount
     return () => {
+      console.log('[Realtime] Cleaning up channels...');
       channels.forEach(channel => {
         supabase.removeChannel(channel);
       });
