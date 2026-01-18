@@ -55,6 +55,7 @@ export type Database = {
           default_po_quantity: number | null
           id: string
           include_in_po: boolean | null
+          po_status: string
           product_name: string
           reorder_level: number | null
           unit: string | null
@@ -69,6 +70,7 @@ export type Database = {
           default_po_quantity?: number | null
           id?: string
           include_in_po?: boolean | null
+          po_status?: string
           product_name: string
           reorder_level?: number | null
           unit?: string | null
@@ -83,6 +85,7 @@ export type Database = {
           default_po_quantity?: number | null
           id?: string
           include_in_po?: boolean | null
+          po_status?: string
           product_name?: string
           reorder_level?: number | null
           unit?: string | null

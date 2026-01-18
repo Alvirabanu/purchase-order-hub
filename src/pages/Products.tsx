@@ -266,7 +266,7 @@ const Products = () => {
 
     setIsAddingToQueue(product.id);
     try {
-      addToPoQueue(product.id, quantity);
+      await addToPoQueue(product.id, quantity);
       
       toast({
         title: "Added to PO Queue",
@@ -282,6 +282,51 @@ const Products = () => {
       setIsAddingToQueue(null);
     }
   };
+
+  // Bulk Add to PO handler
+  const handleBulkAddToQueue = async () => {
+    const productsToAdd = filteredProducts.filter(p => 
+      selectedProducts.has(p.id) && (p.po_quantity || 1) > 0
+    );
+    
+    if (productsToAdd.length === 0) {
+      toast({
+        title: "No Valid Products",
+        description: "Selected products must have PO Quantity > 0",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    let addedCount = 0;
+    let skippedCount = 0;
+
+    for (const product of productsToAdd) {
+      if (queueProductIds.has(product.id)) {
+        skippedCount++;
+        continue;
+      }
+      try {
+        await addToPoQueue(product.id, product.po_quantity || 1);
+        addedCount++;
+      } catch (error) {
+        console.error('Error adding product to queue:', error);
+      }
+    }
+
+    setSelectedProducts(new Set());
+    
+    toast({
+      title: "Bulk Add Complete",
+      description: `Added ${addedCount} product(s) to PO Queue.${skippedCount > 0 ? ` ${skippedCount} already in queue.` : ''}`,
+    });
+  };
+
+  // Check if any selected product has PO Quantity > 0 for bulk add
+  const canBulkAddToQueue = Array.from(selectedProducts).some(id => {
+    const product = filteredProducts.find(p => p.id === id);
+    return product && (product.po_quantity || 1) > 0;
+  });
 
   const handleDownloadTemplate = () => {
     // Template matches Products table columns (blank headers only)
@@ -594,22 +639,40 @@ const Products = () => {
           </CardContent>
         </Card>
 
-        {/* Bulk Actions - Only for Main Admin */}
-        {someSelected && canBulkDelete && (
-          <Card className="mb-4 border-destructive/30 bg-destructive/5">
+        {/* Bulk Actions - For Main Admin and PO Creator */}
+        {someSelected && (canBulkDelete || canAddToQueue) && (
+          <Card className="mb-4 border-primary/30 bg-primary/5">
             <CardContent className="p-4 flex items-center justify-between">
               <span className="text-sm font-medium">
                 {selectedProducts.size} product{selectedProducts.size > 1 ? 's' : ''} selected
               </span>
-              <Button 
-                variant="destructive" 
-                size="sm" 
-                onClick={handleBulkDelete}
-                className="gap-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete Selected
-              </Button>
+              <div className="flex gap-2">
+                {/* Bulk Add to PO - for Main Admin and PO Creator */}
+                {canAddToQueue && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleBulkAddToQueue}
+                    disabled={!canBulkAddToQueue}
+                    className="gap-2"
+                  >
+                    <ShoppingCart className="h-4 w-4" />
+                    Add Selected to PO
+                  </Button>
+                )}
+                {/* Bulk Delete - Only for Main Admin */}
+                {canBulkDelete && (
+                  <Button 
+                    variant="destructive" 
+                    size="sm" 
+                    onClick={handleBulkDelete}
+                    className="gap-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete Selected
+                  </Button>
+                )}
+              </div>
             </CardContent>
           </Card>
         )}
@@ -621,7 +684,7 @@ const Products = () => {
               <table className="data-table">
                 <thead>
                   <tr>
-                    {canBulkDelete && (
+                    {(canBulkDelete || canAddToQueue) && (
                       <th className="w-12">
                         <Checkbox 
                           checked={allSelected}
@@ -648,7 +711,7 @@ const Products = () => {
                     
                     return (
                       <tr key={product.id}>
-                        {canBulkDelete && (
+                        {(canBulkDelete || canAddToQueue) && (
                           <td>
                             <Checkbox 
                               checked={selectedProducts.has(product.id)}

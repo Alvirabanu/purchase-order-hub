@@ -57,6 +57,8 @@ const PODownload = () => {
   const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>('pdf');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingPoId, setDeletingPoId] = useState<string | null>(null);
+  const [showComingSoonDialog, setShowComingSoonDialog] = useState(false);
+  const [comingSoonFeature, setComingSoonFeature] = useState<'email' | 'whatsapp'>('email');
   // Only show approved POs
   const approvedPOs = purchaseOrders.filter(po => po.status === 'approved');
 
@@ -302,107 +304,16 @@ const PODownload = () => {
     }
   };
 
-  // Send PO via WhatsApp
+  // Send PO via WhatsApp - Coming Soon
   const handleSendWhatsApp = (poId: string) => {
-    const po = purchaseOrders.find(p => p.id === poId);
-    if (!po) return;
-    
-    const vendor = getVendorById(po.vendor_id);
-    if (!vendor?.phone) {
-      toast({
-        title: "No Phone Number",
-        description: "This vendor doesn't have a phone number configured.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    // Clean phone number (remove spaces, dashes, etc.)
-    const cleanPhone = vendor.phone.replace(/[\s\-\(\)]/g, '');
-    
-    // Create message with PO details
-    const message = `*Purchase Order: ${po.po_number}*
-Date: ${formatDate(po.date)}
-Vendor: ${vendor.name}
-Status: Approved
-
-Items:
-${po.items?.map(item => {
-      const product = getProductById(item.product_id);
-      return product ? `- ${product.name} (${product.brand}): ${item.quantity} ${product.unit}` : '';
-    }).filter(Boolean).join('\n') || 'No items'}
-
-Total Items: ${po.total_items}
-
-Please confirm receipt of this purchase order.`;
-
-    // Open WhatsApp with the message
-    const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank');
-    
-    toast({
-      title: "Opening WhatsApp",
-      description: `Sending PO ${po.po_number} to ${vendor.name}`,
-    });
+    setComingSoonFeature('whatsapp');
+    setShowComingSoonDialog(true);
   };
 
-  // Send PO via Email (opens default email client)
+  // Send PO via Email - Coming Soon
   const handleSendEmail = (poId: string) => {
-    // Check if admin email is configured
-    if (!appSettings.fromEmail) {
-      toast({
-        title: "From Email Not Configured",
-        description: "Please configure the 'From' email address in Access Manager before sending emails.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const po = purchaseOrders.find(p => p.id === poId);
-    if (!po) return;
-    
-    const vendor = getVendorById(po.vendor_id);
-    if (!vendor?.contact_person_email) {
-      toast({
-        title: "No Email Address",
-        description: "This vendor doesn't have an email address configured.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    // Create email subject and body with configured from email in signature
-    const subject = `Purchase Order: ${po.po_number}`;
-    const body = `Dear ${vendor.contact_person_name || vendor.name},
-
-Please find the Purchase Order details below:
-
-PO Number: ${po.po_number}
-Date: ${formatDate(po.date)}
-Vendor: ${vendor.name}
-
-Items:
-${po.items?.map(item => {
-      const product = getProductById(item.product_id);
-      return product ? `• ${product.name} (${product.brand}): ${item.quantity} ${product.unit}` : '';
-    }).filter(Boolean).join('\n') || 'No items'}
-
-Total Items: ${po.total_items}
-
-Please confirm receipt of this purchase order.
-
-Thank you.
-
-From: ${appSettings.fromEmail}`;
-
-    // Build mailto URL - use configured from email as the sender
-    const mailtoUrl = `mailto:${vendor.contact_person_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}&cc=${encodeURIComponent(appSettings.fromEmail)}`;
-    window.location.href = mailtoUrl;
-    
-    toast({
-      title: "Opening Email Client",
-      description: `Sending PO ${po.po_number} to ${vendor.contact_person_email} from ${appSettings.fromEmail}`,
-    });
+    setComingSoonFeature('email');
+    setShowComingSoonDialog(true);
   };
 
   // Delete PO handler
@@ -437,7 +348,7 @@ From: ${appSettings.fromEmail}`;
     }
   };
 
-  // Bulk WhatsApp handler
+  // Bulk WhatsApp handler - Coming Soon
   const handleBulkWhatsApp = () => {
     if (selectedPOs.size === 0) {
       toast({
@@ -447,46 +358,12 @@ From: ${appSettings.fromEmail}`;
       });
       return;
     }
-    
-    const selectedPOList = purchaseOrders.filter(po => selectedPOs.has(po.id));
-    let successCount = 0;
-    let errorCount = 0;
-    
-    selectedPOList.forEach(po => {
-      const vendor = getVendorById(po.vendor_id);
-      if (vendor?.phone) {
-        const cleanPhone = vendor.phone.replace(/[\s\-\(\)]/g, '');
-        const message = `*Purchase Order: ${po.po_number}*
-Date: ${formatDate(po.date)}
-Vendor: ${vendor.name}
-Total Items: ${po.total_items}
-
-Please confirm receipt of this purchase order.`;
-        window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
-        successCount++;
-      } else {
-        errorCount++;
-      }
-    });
-    
-    toast({
-      title: "Bulk WhatsApp",
-      description: `Opened ${successCount} WhatsApp windows. ${errorCount > 0 ? `${errorCount} vendors have no phone number.` : ''}`,
-    });
+    setComingSoonFeature('whatsapp');
+    setShowComingSoonDialog(true);
   };
 
-  // Bulk Email handler
+  // Bulk Email handler - Coming Soon
   const handleBulkEmail = () => {
-    // Check if admin email is configured
-    if (!appSettings.fromEmail) {
-      toast({
-        title: "From Email Not Configured",
-        description: "Please configure the 'From' email address in Access Manager before sending emails.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     if (selectedPOs.size === 0) {
       toast({
         title: "No POs Selected",
@@ -495,50 +372,8 @@ Please confirm receipt of this purchase order.`;
       });
       return;
     }
-    
-    const selectedPOList = purchaseOrders.filter(po => selectedPOs.has(po.id));
-    const emails: string[] = [];
-    let errorCount = 0;
-    
-    selectedPOList.forEach(po => {
-      const vendor = getVendorById(po.vendor_id);
-      if (vendor?.contact_person_email) {
-        emails.push(vendor.contact_person_email);
-      } else {
-        errorCount++;
-      }
-    });
-    
-    if (emails.length === 0) {
-      toast({
-        title: "No Email Addresses",
-        description: "None of the selected PO vendors have email addresses.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    const subject = `Purchase Orders: ${selectedPOList.map(po => po.po_number).join(', ')}`;
-    const body = `Dear Vendors,
-
-Please find the Purchase Order details for the following orders:
-
-${selectedPOList.map(po => `- ${po.po_number}: ${po.vendorName || getVendorById(po.vendor_id)?.name || 'Unknown'} (${po.total_items} items)`).join('\n')}
-
-Please confirm receipt of these purchase orders.
-
-Thank you.
-
-From: ${appSettings.fromEmail}`;
-
-    // Build mailto URL - use configured from email as CC to ensure sender gets a copy
-    const mailtoUrl = `mailto:${emails.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}&cc=${encodeURIComponent(appSettings.fromEmail)}`;
-    window.location.href = mailtoUrl;
-    
-    toast({
-      title: "Opening Email Client",
-      description: `Sending to ${emails.length} vendors from ${appSettings.fromEmail}. ${errorCount > 0 ? `${errorCount} vendors have no email.` : ''}`,
-    });
+    setComingSoonFeature('email');
+    setShowComingSoonDialog(true);
   };
 
   const allSelected = filteredPOs.length > 0 && filteredPOs.every(po => selectedPOs.has(po.id));
@@ -886,6 +721,25 @@ From: ${appSettings.fromEmail}`;
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Coming Soon Dialog */}
+        <Dialog open={showComingSoonDialog} onOpenChange={setShowComingSoonDialog}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>Coming Soon</DialogTitle>
+              <DialogDescription>
+                {comingSoonFeature === 'email' 
+                  ? 'Email sending will be enabled later.'
+                  : 'WhatsApp sending will be enabled later.'}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button onClick={() => setShowComingSoonDialog(false)}>
+                OK
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );
