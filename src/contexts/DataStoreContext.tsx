@@ -395,8 +395,9 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error adding product:', error);
       throw error;
     }
-    // Realtime will handle the refresh
-  }, [vendors]);
+    // Immediately refresh products for instant UI update
+    await fetchProducts();
+  }, [vendors, fetchProducts]);
 
   const addProductsBatch = useCallback(async (productsData: Omit<Product, 'id'>[]) => {
     const insertData = productsData.map(product => {
@@ -427,8 +428,10 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       throw error;
     }
     
+    // Immediately refresh products for instant UI update
+    await fetchProducts();
     return productsData.length;
-  }, [vendors]);
+  }, [vendors, fetchProducts]);
 
   const updateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
     const supabaseUpdates: any = {};
@@ -460,13 +463,15 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
         console.error('Error updating product:', error);
         throw error;
       }
+      // Immediately refresh products for instant UI update
+      await fetchProducts();
     }
 
     // Also update local state for queue-related fields
     if (updates.added_to_po_queue !== undefined || updates.po_status !== undefined) {
       setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
     }
-  }, [vendors]);
+  }, [vendors, fetchProducts]);
 
   const deleteProduct = useCallback(async (id: string) => {
     const { error } = await supabase.from('products').delete().eq('id', id);
@@ -475,7 +480,9 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error deleting product:', error);
       throw error;
     }
-  }, []);
+    // Immediately refresh products for instant UI update
+    await fetchProducts();
+  }, [fetchProducts]);
 
   const deleteProducts = useCallback(async (ids: string[]) => {
     const { error } = await supabase.from('products').delete().in('id', ids);
@@ -484,7 +491,9 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error deleting products:', error);
       throw error;
     }
-  }, []);
+    // Immediately refresh products for instant UI update
+    await fetchProducts();
+  }, [fetchProducts]);
 
   // PO Queue operations (local only - per user)
   const addToPoQueue = useCallback((productId: string, quantity: number) => {
@@ -551,7 +560,9 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error adding vendor:', error);
       throw error;
     }
-  }, [vendors]);
+    // Immediately refresh vendors for instant UI update
+    await fetchVendors();
+  }, [vendors, fetchVendors]);
 
   const addVendorsBatch = useCallback(async (vendorsData: Omit<Vendor, 'id'>[]) => {
     const existingNames = new Set(vendors.map(v => v.name.trim().toLowerCase()));
@@ -588,10 +599,12 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
         console.error('Error batch adding vendors:', error);
         throw error;
       }
+      // Immediately refresh vendors for instant UI update
+      await fetchVendors();
     }
     
     return { added: validVendors.length, duplicates };
-  }, [vendors]);
+  }, [vendors, fetchVendors]);
 
   const updateVendor = useCallback(async (id: string, updates: Partial<Vendor>) => {
     // Find the actual UUID from the vendor with this display_id
@@ -612,7 +625,9 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error updating vendor:', error);
       throw error;
     }
-  }, [vendors]);
+    // Immediately refresh vendors for instant UI update
+    await fetchVendors();
+  }, [vendors, fetchVendors]);
 
   const deleteVendor = useCallback(async (id: string) => {
     // Find the actual UUID from the vendor with this display_id
@@ -625,7 +640,9 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error deleting vendor:', error);
       throw error;
     }
-  }, [vendors]);
+    // Immediately refresh vendors for instant UI update
+    await fetchVendors();
+  }, [vendors, fetchVendors]);
 
   const deleteVendors = useCallback(async (ids: string[]) => {
     // Convert display_ids to UUIDs
@@ -640,7 +657,9 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error deleting vendors:', error);
       throw error;
     }
-  }, [vendors]);
+    // Immediately refresh vendors for instant UI update
+    await fetchVendors();
+  }, [vendors, fetchVendors]);
 
   // Purchase Order operations
   const getNextPONumber = useCallback(() => {
@@ -662,7 +681,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     if (!user) throw new Error('Must be logged in to create PO');
 
     // vendorId might be a display_id, convert to UUID
-    const vendor = vendors.find(v => v.id === vendorId);
+    const vendor = vendors.find(v => v.id === vendorId || v._uuid === vendorId);
     const vendorUuid = vendor?._uuid || vendorId;
     
     const poNumber = getNextPONumber();
@@ -707,7 +726,10 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       .update({ include_in_po: false })
       .in('id', productIds);
 
-  }, [user, getNextPONumber]);
+    // Immediately refresh POs and products for instant UI update
+    await fetchPurchaseOrders();
+    await fetchProducts();
+  }, [user, vendors, getNextPONumber, fetchPurchaseOrders, fetchProducts]);
 
   const generatePOFromQueue = useCallback(async (selectedProductIds?: string[]) => {
     if (!user) throw new Error('Must be logged in to create PO');
@@ -768,7 +790,9 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error approving PO:', error);
       throw error;
     }
-  }, [user]);
+    // Immediately refresh POs for instant UI update
+    await fetchPurchaseOrders();
+  }, [user, fetchPurchaseOrders]);
 
   const approvePurchaseOrders = useCallback(async (ids: string[]) => {
     if (!user) throw new Error('Must be logged in to approve POs');
@@ -786,7 +810,9 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error bulk approving POs:', error);
       throw error;
     }
-  }, [user]);
+    // Immediately refresh POs for instant UI update
+    await fetchPurchaseOrders();
+  }, [user, fetchPurchaseOrders]);
 
   const rejectPurchaseOrder = useCallback(async (id: string, reason?: string) => {
     if (!user) throw new Error('Must be logged in to reject PO');
@@ -805,7 +831,9 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error rejecting PO:', error);
       throw error;
     }
-  }, [user]);
+    // Immediately refresh POs for instant UI update
+    await fetchPurchaseOrders();
+  }, [user, fetchPurchaseOrders]);
 
   // Lookup helpers - find vendor by display_id or UUID
   const getVendorById = useCallback((id: string) => {
