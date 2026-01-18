@@ -570,7 +570,7 @@ const Products = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Vendors</SelectItem>
-                  {vendors.map(vendor => (
+                  {vendors.filter(vendor => vendor.id && vendor.id.trim() !== '').map(vendor => (
                     <SelectItem key={vendor.id} value={vendor.id}>
                       {vendor.name}
                     </SelectItem>
@@ -583,7 +583,7 @@ const Products = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Categories</SelectItem>
-                  {categories.map(category => (
+                  {categories.filter(category => category && category.trim() !== '').map(category => (
                     <SelectItem key={category} value={category}>
                       {category}
                     </SelectItem>
@@ -805,7 +805,7 @@ const Products = () => {
                     <SelectValue placeholder="Select a vendor" />
                   </SelectTrigger>
                   <SelectContent>
-                    {vendors.map(vendor => (
+                    {vendors.filter(vendor => vendor.id && vendor.id.trim() !== '').map(vendor => (
                       <SelectItem key={vendor.id} value={vendor.id}>
                         {vendor.name}
                       </SelectItem>
