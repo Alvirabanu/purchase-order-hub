@@ -22,8 +22,18 @@ import {
 import { Label } from '@/components/ui/label';
 import { useDataStore } from '@/contexts/DataStoreContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Download, Search, FolderDown, FileDown, Package, FileSpreadsheet, FileText, Mail, MessageCircle } from 'lucide-react';
+import { Download, Search, FolderDown, FileDown, Package, FileSpreadsheet, FileText, Mail, MessageCircle, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
@@ -32,10 +42,11 @@ type DownloadFormat = 'pdf' | 'xlsx';
 
 const PODownload = () => {
   const { hasPermission } = useAuth();
-  const { purchaseOrders, getVendorById, getProductById, addDownloadLog } = useDataStore();
+  const { purchaseOrders, getVendorById, getProductById, addDownloadLog, deletePurchaseOrder } = useDataStore();
   
   const canDownload = hasPermission('download_po');
   const canBulkDownload = hasPermission('bulk_download_po');
+  const canDelete = hasPermission('delete_po');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPOs, setSelectedPOs] = useState<Set<string>>(new Set());
@@ -44,7 +55,8 @@ const PODownload = () => {
   const [isBulkDownload, setIsBulkDownload] = useState(false);
   const [singleDownloadId, setSingleDownloadId] = useState<string | null>(null);
   const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>('pdf');
-
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingPoId, setDeletingPoId] = useState<string | null>(null);
   // Only show approved POs
   const approvedPOs = purchaseOrders.filter(po => po.status === 'approved');
 
@@ -381,6 +393,129 @@ Thank you.`;
     });
   };
 
+  // Delete PO handler
+  const handleDeletePO = (poId: string) => {
+    setDeletingPoId(poId);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDeletePO = async () => {
+    if (!deletingPoId) return;
+    
+    try {
+      await deletePurchaseOrder(deletingPoId);
+      toast({
+        title: "PO Deleted",
+        description: "Purchase order has been deleted successfully.",
+      });
+      setSelectedPOs(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(deletingPoId);
+        return newSet;
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete PO",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteDialogOpen(false);
+      setDeletingPoId(null);
+    }
+  };
+
+  // Bulk WhatsApp handler
+  const handleBulkWhatsApp = () => {
+    if (selectedPOs.size === 0) {
+      toast({
+        title: "No POs Selected",
+        description: "Please select at least one PO to send via WhatsApp.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const selectedPOList = purchaseOrders.filter(po => selectedPOs.has(po.id));
+    let successCount = 0;
+    let errorCount = 0;
+    
+    selectedPOList.forEach(po => {
+      const vendor = getVendorById(po.vendor_id);
+      if (vendor?.phone) {
+        const cleanPhone = vendor.phone.replace(/[\s\-\(\)]/g, '');
+        const message = `*Purchase Order: ${po.po_number}*
+Date: ${formatDate(po.date)}
+Vendor: ${vendor.name}
+Total Items: ${po.total_items}
+
+Please confirm receipt of this purchase order.`;
+        window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
+        successCount++;
+      } else {
+        errorCount++;
+      }
+    });
+    
+    toast({
+      title: "Bulk WhatsApp",
+      description: `Opened ${successCount} WhatsApp windows. ${errorCount > 0 ? `${errorCount} vendors have no phone number.` : ''}`,
+    });
+  };
+
+  // Bulk Email handler
+  const handleBulkEmail = () => {
+    if (selectedPOs.size === 0) {
+      toast({
+        title: "No POs Selected",
+        description: "Please select at least one PO to send via Email.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const selectedPOList = purchaseOrders.filter(po => selectedPOs.has(po.id));
+    const emails: string[] = [];
+    let errorCount = 0;
+    
+    selectedPOList.forEach(po => {
+      const vendor = getVendorById(po.vendor_id);
+      if (vendor?.contact_person_email) {
+        emails.push(vendor.contact_person_email);
+      } else {
+        errorCount++;
+      }
+    });
+    
+    if (emails.length === 0) {
+      toast({
+        title: "No Email Addresses",
+        description: "None of the selected PO vendors have email addresses.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const subject = `Purchase Orders: ${selectedPOList.map(po => po.po_number).join(', ')}`;
+    const body = `Dear Vendors,
+
+Please find the Purchase Order details for the following orders:
+
+${selectedPOList.map(po => `- ${po.po_number}: ${po.vendorName || getVendorById(po.vendor_id)?.name || 'Unknown'} (${po.total_items} items)`).join('\n')}
+
+Please confirm receipt of these purchase orders.
+
+Thank you.`;
+
+    const mailtoUrl = `mailto:${emails.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailtoUrl;
+    
+    toast({
+      title: "Opening Email Client",
+      description: `Sending to ${emails.length} vendors. ${errorCount > 0 ? `${errorCount} vendors have no email.` : ''}`,
+    });
+  };
+
   const allSelected = filteredPOs.length > 0 && filteredPOs.every(po => selectedPOs.has(po.id));
   const someSelected = selectedPOs.size > 0;
 
@@ -506,6 +641,22 @@ Thank you.`;
                   <FolderDown className="h-4 w-4" />
                   Bulk Download ({selectedPOs.size})
                 </Button>
+                <Button 
+                  onClick={handleBulkWhatsApp}
+                  variant="outline"
+                  className="gap-2 text-green-600 hover:text-green-700"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  Bulk WhatsApp
+                </Button>
+                <Button 
+                  onClick={handleBulkEmail}
+                  variant="outline"
+                  className="gap-2 text-blue-600 hover:text-blue-700"
+                >
+                  <Mail className="h-4 w-4" />
+                  Bulk Email
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -588,6 +739,17 @@ Thank you.`;
                                   <Mail className="h-4 w-4" />
                                 </Button>
                               </>
+                            )}
+                            {canDelete && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDeletePO(po.id)}
+                                className="gap-1 text-destructive hover:text-destructive"
+                                title="Delete PO"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
                             )}
                           </div>
                         </td>
@@ -681,6 +843,24 @@ Thank you.`;
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Purchase Order</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete this purchase order? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmDeletePO} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );

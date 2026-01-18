@@ -174,8 +174,8 @@ const Vendors = () => {
   };
 
   const handleDownloadTemplate = () => {
-    // Blank template with only headers
-    const headers = ['Vendor ID', 'Vendor Name', 'Address', 'GST Number', 'Contact Person Name', 'Contact Person Email'];
+    // Blank template with only headers - now includes Phone Number
+    const headers = ['Vendor ID', 'Vendor Name', 'Address', 'GST Number', 'Phone Number', 'Contact Person Name', 'Contact Person Email'];
     const csvContent = headers.join(',') + '\n';
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -195,9 +195,9 @@ const Vendors = () => {
   };
 
   const handleDownloadAllVendors = () => {
-    const headers = ['Vendor ID', 'Vendor Name', 'Address', 'GST Number', 'Contact Person Name', 'Contact Person Email'];
+    const headers = ['Vendor ID', 'Vendor Name', 'Address', 'GST Number', 'Phone Number', 'Contact Person Name', 'Contact Person Email'];
     const rows = vendors.map(v => 
-      [v.id, v.name, `"${v.address.replace(/"/g, '""')}"`, v.gst, v.contact_person_name, v.contact_person_email].join(',')
+      [v.id, v.name, `"${v.address.replace(/"/g, '""')}"`, v.gst, v.phone || '', v.contact_person_name, v.contact_person_email].join(',')
     );
     const csvContent = headers.join(',') + '\n' + rows.join('\n');
     
@@ -245,6 +245,7 @@ const Vendors = () => {
       const nameIndex = headers.findIndex(h => h.includes('vendor') && h.includes('name'));
       const addressIndex = headers.findIndex(h => h.includes('address'));
       const gstIndex = headers.findIndex(h => h.includes('gst'));
+      const phoneIndex = headers.findIndex(h => h.includes('phone'));
       const contactNameIndex = headers.findIndex(h => h.includes('contact') && h.includes('name'));
       const contactEmailIndex = headers.findIndex(h => h.includes('email'));
 
@@ -269,6 +270,7 @@ const Vendors = () => {
         
         const address = addressIndex >= 0 ? values[addressIndex] : '';
         const gst = gstIndex >= 0 ? values[gstIndex] : '';
+        const phone = phoneIndex >= 0 ? values[phoneIndex] : '';
         const contactName = contactNameIndex >= 0 ? values[contactNameIndex] : '';
         const contactEmail = contactEmailIndex >= 0 ? values[contactEmailIndex] : '';
         
@@ -276,7 +278,7 @@ const Vendors = () => {
           name: name.trim(),
           address: address || '',
           gst: gst || '',
-          phone: '',
+          phone: phone || '',
           contact_person_name: contactName || '',
           contact_person_email: contactEmail || '',
         });
@@ -445,7 +447,7 @@ const Vendors = () => {
                     <th>Vendor Name</th>
                     <th className="max-w-[200px]">Address</th>
                     <th>GST Number</th>
-                    <th>Phone</th>
+                    <th>Phone Number</th>
                     <th>Contact Person Name</th>
                     <th>Contact Person Email</th>
                     {(canManageVendors || canAddSingle) && <th className="text-right">Actions</th>}

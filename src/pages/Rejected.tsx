@@ -5,12 +5,27 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useDataStore } from '@/contexts/DataStoreContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Eye, XCircle } from 'lucide-react';
+import { Eye, XCircle, Trash2 } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 const Rejected = () => {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
-  const { purchaseOrders, getVendorById } = useDataStore();
+  const { purchaseOrders, getVendorById, deletePurchaseOrder } = useDataStore();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingPoId, setDeletingPoId] = useState<string | null>(null);
+  
+  const canDelete = hasPermission('delete_po');
 
   const rejectedPOs = purchaseOrders.filter(po => po.status === 'rejected');
 
@@ -30,6 +45,32 @@ const Rejected = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const handleDeletePO = (poId: string) => {
+    setDeletingPoId(poId);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDeletePO = async () => {
+    if (!deletingPoId) return;
+    
+    try {
+      await deletePurchaseOrder(deletingPoId);
+      toast({
+        title: "PO Deleted",
+        description: "Rejected purchase order has been deleted successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete PO",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteDialogOpen(false);
+      setDeletingPoId(null);
+    }
   };
 
   if (!hasPermission('view_rejected')) {
@@ -93,15 +134,27 @@ const Rejected = () => {
                           {po.rejection_reason || '-'}
                         </td>
                         <td className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => navigate(`/po/${po.id}`)}
-                            className="gap-1"
-                          >
-                            <Eye className="h-4 w-4" />
-                            View
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => navigate(`/po/${po.id}`)}
+                              className="gap-1"
+                            >
+                              <Eye className="h-4 w-4" />
+                              View
+                            </Button>
+                            {canDelete && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeletePO(po.id)}
+                                className="gap-1 text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -119,6 +172,24 @@ const Rejected = () => {
             )}
           </div>
         </Card>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Rejected PO</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to permanently delete this rejected purchase order? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmDeletePO} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );
