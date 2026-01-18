@@ -348,6 +348,16 @@ Please confirm receipt of this purchase order.`;
 
   // Send PO via Email (opens default email client)
   const handleSendEmail = (poId: string) => {
+    // Check if admin email is configured
+    if (!appSettings.fromEmail) {
+      toast({
+        title: "From Email Not Configured",
+        description: "Please configure the 'From' email address in Access Manager before sending emails.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const po = purchaseOrders.find(p => p.id === poId);
     if (!po) return;
     
@@ -361,7 +371,7 @@ Please confirm receipt of this purchase order.`;
       return;
     }
     
-    // Create email subject and body
+    // Create email subject and body with configured from email in signature
     const subject = `Purchase Order: ${po.po_number}`;
     const body = `Dear ${vendor.contact_person_name || vendor.name},
 
@@ -381,18 +391,17 @@ Total Items: ${po.total_items}
 
 Please confirm receipt of this purchase order.
 
-Thank you.`;
+Thank you.
 
-    // Build mailto URL with optional from address (cc to self if from email is configured)
-    let mailtoUrl = `mailto:${vendor.contact_person_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    if (appSettings.fromEmail) {
-      mailtoUrl += `&from=${encodeURIComponent(appSettings.fromEmail)}`;
-    }
+From: ${appSettings.fromEmail}`;
+
+    // Build mailto URL - use configured from email as the sender
+    const mailtoUrl = `mailto:${vendor.contact_person_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}&cc=${encodeURIComponent(appSettings.fromEmail)}`;
     window.location.href = mailtoUrl;
     
     toast({
       title: "Opening Email Client",
-      description: `Sending PO ${po.po_number} to ${vendor.contact_person_email}`,
+      description: `Sending PO ${po.po_number} to ${vendor.contact_person_email} from ${appSettings.fromEmail}`,
     });
   };
 
@@ -468,6 +477,16 @@ Please confirm receipt of this purchase order.`;
 
   // Bulk Email handler
   const handleBulkEmail = () => {
+    // Check if admin email is configured
+    if (!appSettings.fromEmail) {
+      toast({
+        title: "From Email Not Configured",
+        description: "Please configure the 'From' email address in Access Manager before sending emails.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (selectedPOs.size === 0) {
       toast({
         title: "No POs Selected",
@@ -508,17 +527,17 @@ ${selectedPOList.map(po => `- ${po.po_number}: ${po.vendorName || getVendorById(
 
 Please confirm receipt of these purchase orders.
 
-Thank you.`;
+Thank you.
 
-    let mailtoUrl = `mailto:${emails.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    if (appSettings.fromEmail) {
-      mailtoUrl += `&from=${encodeURIComponent(appSettings.fromEmail)}`;
-    }
+From: ${appSettings.fromEmail}`;
+
+    // Build mailto URL - use configured from email as CC to ensure sender gets a copy
+    const mailtoUrl = `mailto:${emails.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}&cc=${encodeURIComponent(appSettings.fromEmail)}`;
     window.location.href = mailtoUrl;
     
     toast({
       title: "Opening Email Client",
-      description: `Sending to ${emails.length} vendors. ${errorCount > 0 ? `${errorCount} vendors have no email.` : ''}`,
+      description: `Sending to ${emails.length} vendors from ${appSettings.fromEmail}. ${errorCount > 0 ? `${errorCount} vendors have no email.` : ''}`,
     });
   };
 
