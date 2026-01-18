@@ -255,8 +255,8 @@ const Products = () => {
       return;
     }
 
-    // Check if vendor exists
-    const vendorExists = vendors.some(v => v.id === product.vendor_id);
+    // Check if vendor exists (product.vendor_id is UUID, so check against _uuid)
+    const vendorExists = vendors.some(v => v._uuid === product.vendor_id || v.id === product.vendor_id);
     if (!vendorExists) {
       const vendor = getVendorById(product.vendor_id);
       setPendingVendorName(vendor?.name || product.vendor_id);
