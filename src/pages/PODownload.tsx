@@ -39,6 +39,8 @@ import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import { WhatsAppSingleDialog } from '@/components/WhatsAppSingleDialog';
 import { WhatsAppBulkDialog } from '@/components/WhatsAppBulkDialog';
+import { EmailSingleDialog } from '@/components/EmailSingleDialog';
+import { EmailBulkDialog } from '@/components/EmailBulkDialog';
 
 type DownloadFormat = 'pdf' | 'xlsx';
 
@@ -67,6 +69,11 @@ const PODownload = () => {
   const [showWhatsAppSingleDialog, setShowWhatsAppSingleDialog] = useState(false);
   const [whatsAppSinglePOId, setWhatsAppSinglePOId] = useState<string | null>(null);
   const [showWhatsAppBulkDialog, setShowWhatsAppBulkDialog] = useState(false);
+  
+  // Email dialog states
+  const [showEmailSingleDialog, setShowEmailSingleDialog] = useState(false);
+  const [emailSinglePOId, setEmailSinglePOId] = useState<string | null>(null);
+  const [showEmailBulkDialog, setShowEmailBulkDialog] = useState(false);
   // Only show approved POs
   const approvedPOs = purchaseOrders.filter(po => po.status === 'approved');
 
@@ -318,10 +325,10 @@ const PODownload = () => {
     setShowWhatsAppSingleDialog(true);
   };
 
-  // Send PO via Email - Coming Soon
+  // Send PO via Email - Open dialog with vendor info
   const handleSendEmail = (poId: string) => {
-    setComingSoonFeature('email');
-    setShowComingSoonDialog(true);
+    setEmailSinglePOId(poId);
+    setShowEmailSingleDialog(true);
   };
 
   // Get selected PO for WhatsApp single dialog
@@ -335,10 +342,24 @@ const PODownload = () => {
     return getVendorById(whatsAppSinglePO.vendor_id);
   }, [whatsAppSinglePO, getVendorById]);
 
-  // Get selected POs for bulk WhatsApp
+  // Get selected POs for bulk WhatsApp/Email
   const selectedPOsForBulk = useMemo(() => {
     return purchaseOrders.filter(po => selectedPOs.has(po.id));
   }, [selectedPOs, purchaseOrders]);
+
+  // Get selected PO for email single dialog
+  const emailSinglePO = useMemo(() => {
+    if (!emailSinglePOId) return null;
+    return purchaseOrders.find(po => po.id === emailSinglePOId) || null;
+  }, [emailSinglePOId, purchaseOrders]);
+
+  const emailSingleVendor = useMemo(() => {
+    if (!emailSinglePO) return undefined;
+    return getVendorById(emailSinglePO.vendor_id);
+  }, [emailSinglePO, getVendorById]);
+
+  // Get admin from email from app settings
+  const adminFromEmail = appSettings?.fromEmail || '';
 
   // Delete PO handler
   const handleDeletePO = (poId: string) => {
@@ -385,7 +406,7 @@ const PODownload = () => {
     setShowWhatsAppBulkDialog(true);
   };
 
-  // Bulk Email handler - Coming Soon
+  // Bulk Email handler - Open bulk dialog
   const handleBulkEmail = () => {
     if (selectedPOs.size === 0) {
       toast({
@@ -395,8 +416,7 @@ const PODownload = () => {
       });
       return;
     }
-    setComingSoonFeature('email');
-    setShowComingSoonDialog(true);
+    setShowEmailBulkDialog(true);
   };
 
   // Bulk Delete handler
@@ -856,6 +876,29 @@ const PODownload = () => {
           selectedPOs={selectedPOsForBulk}
           getVendorById={getVendorById}
           getProductById={getProductById}
+        />
+
+        {/* Email Single PO Dialog */}
+        <EmailSingleDialog
+          open={showEmailSingleDialog}
+          onOpenChange={(open) => {
+            setShowEmailSingleDialog(open);
+            if (!open) setEmailSinglePOId(null);
+          }}
+          po={emailSinglePO}
+          vendor={emailSingleVendor}
+          getProductById={getProductById}
+          fromEmail={adminFromEmail}
+        />
+
+        {/* Email Bulk Dialog */}
+        <EmailBulkDialog
+          open={showEmailBulkDialog}
+          onOpenChange={setShowEmailBulkDialog}
+          selectedPOs={selectedPOsForBulk}
+          getVendorById={getVendorById}
+          getProductById={getProductById}
+          fromEmail={adminFromEmail}
         />
       </div>
     </AppLayout>
