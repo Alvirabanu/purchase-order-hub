@@ -18,12 +18,12 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { UserRole } from "@/types";
-import { UserPlus, Trash2, Shield, Users } from "lucide-react";
+import { UserPlus, Trash2, Shield, Users, Mail, Settings } from "lucide-react";
 import { toast } from "sonner";
 
 const AccessManager = () => {
   const { user } = useAuth();
-  const { appUsers, addAppUser, deleteAppUser } = useDataStore();
+  const { appUsers, addAppUser, deleteAppUser, appSettings, updateAppSettings } = useDataStore();
 
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newUser, setNewUser] = useState({
@@ -33,6 +33,7 @@ const AccessManager = () => {
     role: "" as UserRole | "",
   });
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [fromEmailInput, setFromEmailInput] = useState(appSettings.fromEmail || "");
 
   // Only Main Admin can access this page
   if (user?.role !== "main_admin") {
@@ -126,6 +127,11 @@ const AccessManager = () => {
 
   // Filter out main_admin users from the list (they can't be managed here)
   const managedUsers = appUsers.filter((u) => u.role !== "main_admin");
+
+  const handleSaveFromEmail = () => {
+    updateAppSettings({ fromEmail: fromEmailInput.trim() });
+    toast.success("From Email address saved successfully");
+  };
 
   return (
     <AppLayout>
@@ -252,6 +258,42 @@ const AccessManager = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Email Configuration */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Email Configuration
+            </CardTitle>
+            <CardDescription>Configure the "From" email address used for sending PO emails</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-end gap-4">
+              <div className="flex-1 space-y-2">
+                <Label htmlFor="fromEmail" className="flex items-center gap-2">
+                  <Mail className="h-4 w-4" />
+                  From Email Address
+                </Label>
+                <Input
+                  id="fromEmail"
+                  type="email"
+                  placeholder="e.g., purchasing@yourcompany.com"
+                  value={fromEmailInput}
+                  onChange={(e) => setFromEmailInput(e.target.value)}
+                />
+              </div>
+              <Button onClick={handleSaveFromEmail}>
+                Save Email
+              </Button>
+            </div>
+            {appSettings.fromEmail && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Current: <span className="font-medium text-foreground">{appSettings.fromEmail}</span>
+              </p>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Users Table */}
         <Card>

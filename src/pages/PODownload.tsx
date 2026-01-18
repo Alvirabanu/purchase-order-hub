@@ -42,7 +42,7 @@ type DownloadFormat = 'pdf' | 'xlsx';
 
 const PODownload = () => {
   const { hasPermission } = useAuth();
-  const { purchaseOrders, getVendorById, getProductById, addDownloadLog, deletePurchaseOrder } = useDataStore();
+  const { purchaseOrders, getVendorById, getProductById, addDownloadLog, deletePurchaseOrder, appSettings } = useDataStore();
   
   const canDownload = hasPermission('download_po');
   const canBulkDownload = hasPermission('bulk_download_po');
@@ -383,8 +383,11 @@ Please confirm receipt of this purchase order.
 
 Thank you.`;
 
-    // Open default email client
-    const mailtoUrl = `mailto:${vendor.contact_person_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    // Build mailto URL with optional from address (cc to self if from email is configured)
+    let mailtoUrl = `mailto:${vendor.contact_person_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    if (appSettings.fromEmail) {
+      mailtoUrl += `&from=${encodeURIComponent(appSettings.fromEmail)}`;
+    }
     window.location.href = mailtoUrl;
     
     toast({
@@ -507,7 +510,10 @@ Please confirm receipt of these purchase orders.
 
 Thank you.`;
 
-    const mailtoUrl = `mailto:${emails.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    let mailtoUrl = `mailto:${emails.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    if (appSettings.fromEmail) {
+      mailtoUrl += `&from=${encodeURIComponent(appSettings.fromEmail)}`;
+    }
     window.location.href = mailtoUrl;
     
     toast({
