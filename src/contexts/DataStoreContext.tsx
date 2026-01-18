@@ -18,6 +18,7 @@ export interface AppUser {
 const STORAGE_KEYS = {
   PO_QUEUE: 'po_manager_po_queue',
   APP_USERS: 'po_manager_app_users',
+  APP_SETTINGS: 'po_manager_app_settings',
 };
 
 // Extended PO type with additional tracking fields
@@ -38,6 +39,11 @@ export interface DownloadLog {
   location: string;
   downloaded_at: string;
   downloaded_by: string;
+}
+
+// App Settings type
+export interface AppSettings {
+  fromEmail: string;
 }
 
 interface DataStoreContextType {
@@ -93,6 +99,10 @@ interface DataStoreContextType {
   addAppUser: (user: Omit<AppUser, 'id' | 'created_at'>) => void;
   deleteAppUser: (id: string) => void;
   validateCredentials: (username: string, password: string, role: UserRole) => AppUser | null;
+  
+  // App Settings
+  appSettings: AppSettings;
+  updateAppSettings: (settings: Partial<AppSettings>) => void;
 }
 
 const DataStoreContext = createContext<DataStoreContextType | undefined>(undefined);
@@ -162,6 +172,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
   const [vendorsLoading, setVendorsLoading] = useState(true);
   const [poQueue, setPoQueue] = useState<POQueueItem[]>([]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
+  const [appSettings, setAppSettings] = useState<AppSettings>({ fromEmail: '' });
 
   // Load local-only data from localStorage
   const loadFromStorage = useCallback(<T,>(key: string, defaultValue: T): T => {
@@ -286,8 +297,10 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     // Load local-only data
     const storedQueue = loadFromStorage<POQueueItem[]>(STORAGE_KEYS.PO_QUEUE, []);
     const storedAppUsers = loadFromStorage<AppUser[]>(STORAGE_KEYS.APP_USERS, []);
+    const storedSettings = loadFromStorage<AppSettings>(STORAGE_KEYS.APP_SETTINGS, { fromEmail: '' });
     setPoQueue(storedQueue);
     setAppUsers(storedAppUsers);
+    setAppSettings(storedSettings);
 
     // Fetch data from Supabase
     fetchVendors();
@@ -787,10 +800,75 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       }
     }
 
-    // Create PO for each vendor
-    for (const [vendorId, items] of Object.entries(groupedByVendor)) {
-      await addPurchaseOrder(vendorId, items);
+    // Get current max PO number from database to avoid duplicates
+    const { data: existingPOs } = await supabase
+      .from('purchase_orders')
+      .select('po_number')
+      .order('created_at', { ascending: false });
+    
+    let maxPONum = 0;
+    (existingPOs || []).forEach(po => {
+      const match = po.po_number.match(/PO-(\d+)/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxPONum) maxPONum = num;
+      }
+    });
+
+    // Create PO for each vendor with incrementing PO numbers
+    const vendorEntries = Object.entries(groupedByVendor);
+    for (let i = 0; i < vendorEntries.length; i++) {
+      const [vendorId, items] = vendorEntries[i];
+      const poNumber = `PO-${String(maxPONum + i + 1).padStart(4, '0')}`;
+      
+      // Convert vendor display_id to UUID if needed
+      const vendor = vendors.find(v => v.id === vendorId || v._uuid === vendorId);
+      const vendorUuid = vendor?._uuid || vendorId;
+
+      // Create PO with unique number
+      const { data: poData, error: poError } = await supabase
+        .from('purchase_orders')
+        .insert({
+          po_number: poNumber,
+          vendor_id: vendorUuid,
+          status: 'created',
+          created_by: user.name,
+        })
+        .select()
+        .single();
+      
+      if (poError) {
+        console.error('Error creating PO:', poError);
+        throw poError;
+      }
+
+      // Create PO items
+      const itemsToInsert = items.map(item => ({
+        po_id: poData.id,
+        product_id: item.productId,
+        quantity: item.quantity,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('purchase_order_items')
+        .insert(itemsToInsert);
+      
+      if (itemsError) {
+        console.error('Error creating PO items:', itemsError);
+        throw itemsError;
+      }
+
+      // Mark products as included in PO
+      const productIds = items.map(item => item.productId);
+      await supabase
+        .from('products')
+        .update({ include_in_po: false })
+        .in('id', productIds);
     }
+
+    // Refresh data
+    await fetchPurchaseOrders();
+    await fetchProducts();
 
     // Remove processed items from queue
     if (selectedProductIds) {
@@ -801,7 +879,7 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       setPoQueue([]);
       saveToStorage(STORAGE_KEYS.PO_QUEUE, []);
     }
-  }, [user, poQueue, products, addPurchaseOrder, saveToStorage]);
+  }, [user, poQueue, products, vendors, fetchPurchaseOrders, fetchProducts, saveToStorage]);
 
   const approvePurchaseOrder = useCallback(async (id: string) => {
     if (!user) throw new Error('Must be logged in to approve PO');
@@ -933,6 +1011,15 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
     return matchedUser || null;
   }, [loadFromStorage]);
 
+  // App Settings management
+  const updateAppSettings = useCallback((updates: Partial<AppSettings>) => {
+    setAppSettings(prev => {
+      const updated = { ...prev, ...updates };
+      saveToStorage(STORAGE_KEYS.APP_SETTINGS, updated);
+      return updated;
+    });
+  }, [saveToStorage]);
+
   return (
     <DataStoreContext.Provider value={{
       products,
@@ -972,6 +1059,8 @@ export const DataStoreProvider = ({ children }: { children: ReactNode }) => {
       addAppUser,
       deleteAppUser,
       validateCredentials,
+      appSettings,
+      updateAppSettings,
     }}>
       {children}
     </DataStoreContext.Provider>
